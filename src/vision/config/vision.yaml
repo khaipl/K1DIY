@@ -1,0 +1,3 @@
+/vision_node:
+  ros__parameters:
+    image_path: "/home/lekhai2202/K1DIY/data/test/img1.jpg"
