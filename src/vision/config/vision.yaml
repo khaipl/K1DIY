@@ -1,3 +1,16 @@
-/vision_node:
+vision_node:
   ros__parameters:
-    image_path: "/home/lekhai2202/K1DIY/data/test/img1.jpg"
+    # --- The Settings you need for your DIY logic ---
+    
+    # Set this to true when you want to run YOLOv8, false for safe camera testing
+    enable_ai: false 
+    
+    backend: "cpu_onnx"
+    model_path: "src/vision/model/yolov8_k1.onnx"
+    camera_topic: "/image_raw"
+    
+    # --- Keeping RoboCup values for when you expand later ---
+    detection_model:
+      confidence_threshold: 0.2
+      nms_threshold: 0.4
+      classnames: [Ball, Goalpost, Person, LCross, TCross, XCross, PenaltyPoint, Opponent, BRMarker]
