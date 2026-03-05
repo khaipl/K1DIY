@@ -1,20 +1,15 @@
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/image.hpp>
-#include <cv_bridge/cv_bridge.h>
+#include <cv_bridge/cv_bridge.h> // Still needed for publishing the debug mono8 image
 #include <opencv2/opencv.hpp>
 #include <opencv2/dnn.hpp>
 #include <memory>
 #include <vector>
 #include <filesystem>
 
-// ===========================================================================
-// [ROBOCUP DEPENDENCIES - COMMENTED OUT FOR DIY]
-// These are the internal Booster modules we are currently bypassing.
-// #include "vision_interface/msg/detected_object.hpp"
-// #include "vision_interface/msg/detections.hpp"
-// #include "booster_vision/base/data_syncer.hpp"
-// #include "booster_vision/pose_estimator/pose_estimator.h"
-// ===========================================================================
+// === [NAOVAK1 HARDWARE SPECIFIC] ===
+// Using the official Booster image bridge to handle Jetson NV12 camera formats
+#include "booster_vision/img_bridge.h"
 
 // Simple internal struct to hold detections until we need custom ROS messages
 struct Detection {
@@ -97,6 +92,7 @@ public:
         this->declare_parameter<bool>("enable_ai", false); 
         this->declare_parameter<std::string>("backend", "cpu_onnx"); 
         this->declare_parameter<std::string>("model_path", "src/vision/model/yolov8_k1.onnx");
+        // The default topic on the K1 might be different, but we'll read it from vision.yaml
         this->declare_parameter<std::string>("camera_topic", "/camera/image_raw");
 
         bool enable_ai = this->get_parameter("enable_ai").as_bool();
@@ -127,22 +123,31 @@ public:
             RCLCPP_INFO(this->get_logger(), "AI Mode DISABLED. Running in camera/edge-detection only mode.");
             detector_ = nullptr;
         }
-
-        // --- C. ROS 2 Subscriptions ---
+        
+        // Listen to the robot's camera
         color_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
             camera_topic, 10, 
             std::bind(&VisionNode::ColorCallback, this, std::placeholders::_1)
         );
+
+        // Publisher for the laptop to view the edges
+        debug_img_pub_ = this->create_publisher<sensor_msgs::msg::Image>("/vision/debug_edges", 10);
     }
 
 private:
     void ColorCallback(const sensor_msgs::msg::Image::ConstSharedPtr& msg) {
-        // 1. Convert ROS Image -> OpenCV Mat
+        // 1. Convert ROS Image -> OpenCV Mat using the K1's specific image bridge
         cv::Mat frame;
         try {
-            frame = cv_bridge::toCvCopy(msg, "bgr8")->image;
-        } catch (cv_bridge::Exception& e) {
-            RCLCPP_ERROR(this->get_logger(), "cv_bridge exception: %s", e.what());
+            // This safely handles the NV12 hardware encoding from the Jetson
+            frame = booster_vision::toCVMat(*msg); 
+        } catch (const std::exception& e) {
+            RCLCPP_ERROR(this->get_logger(), "booster_vision::img_bridge exception: %s", e.what());
+            return;
+        }
+
+        if (frame.empty()) {
+            RCLCPP_WARN(this->get_logger(), "Received empty frame from img_bridge.");
             return;
         }
 
@@ -161,14 +166,23 @@ private:
             }
         }
 
-        // 4. Visualization
-        cv::imshow("NaovaK1 Laptop Feed", frame);
-        cv::imshow("Field Line Detection (Edges)", edges);
-        cv::waitKey(1);
+        // 4. Visualization (ROBOT HEADLESS MODE)
+        std_msgs::msg::Header header;
+        header.stamp = this->get_clock()->now();
+        header.frame_id = "camera_link"; 
+
+        try {
+            // We can still use cv_bridge here because we are encoding a simple mono8 image to send OUT
+            auto debug_msg = cv_bridge::CvImage(header, "mono8", edges).toImageMsg();
+            debug_img_pub_->publish(*debug_msg);
+        } catch (cv_bridge::Exception& e) {
+            RCLCPP_ERROR(this->get_logger(), "cv_bridge exception during publish: %s", e.what());
+        }
     }
 
     std::shared_ptr<YoloDetector> detector_;
     rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr color_sub_;
+    rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr debug_img_pub_;
 };
 
 int main(int argc, char **argv) {

@@ -28,7 +28,10 @@ find_path(TENSORRT_INCLUDE_DIR NvInfer.h)
 # ==========================================
 # 3. BUILD THE EXECUTABLE
 # ==========================================
-add_executable(vision_node src/vision_node.cpp)
+add_executable(vision_node 
+  src/vision_node.cpp
+  src/img_bridge.cpp
+)
 
 # Only give these headers to vision_node. Nothing else.
 target_include_directories(vision_node PRIVATE
@@ -69,7 +72,11 @@ endif()
 install(TARGETS vision_node
   DESTINATION lib/${PROJECT_NAME})
 
-install(DIRECTORY config
-  DESTINATION share/${PROJECT_NAME})
+# Install non-compiled files (launch, config, models) to the share directory
+install(DIRECTORY 
+  launch
+  config
+  DESTINATION share/${PROJECT_NAME}
+)
 
 ament_package()
