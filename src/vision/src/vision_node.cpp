@@ -126,7 +126,7 @@ public:
         
         // Listen to the robot's camera
         color_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
-            camera_topic, 10, 
+            camera_topic, rclcpp::SensorDataQoS(), 
             std::bind(&VisionNode::ColorCallback, this, std::placeholders::_1)
         );
 
