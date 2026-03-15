@@ -105,7 +105,7 @@ public:
         // --- B. AI Feature Toggle Logic ---
         if (enable_ai) {
             RCLCPP_INFO(this->get_logger(), "AI Mode ENABLED. Loading %s model...", backend.c_str());
-            
+
             if (backend == "cpu_onnx") {
                 detector_ = std::make_shared<OnnxDetector>(model_path);
             } 
@@ -150,20 +150,52 @@ private:
             RCLCPP_WARN(this->get_logger(), "Received empty frame from img_bridge.");
             return;
         }
-
         // 2. Basic Image Processing (Edge Detection)
         cv::Mat gray, edges;
         cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
         cv::Canny(gray, edges, 50, 150); 
 
-        // 3. AI Inference (Protected by Toggle)
-        // If enable_ai is false, detector_ is null, and this block is safely skipped.
-        if (detector_) {
-            try {
-                auto detections = detector_->Inference(frame);
-            } catch (const std::exception& e) {
-                RCLCPP_WARN_ONCE(this->get_logger(), "AI Inference failed, skipping...");
+        // ==========================================================
+        // --- NEW FEATURE: 5-SECOND DUAL VIDEO RECORDER ---
+        // ==========================================================
+        if (is_recording_) {
+            // Initialize writers on the very first frame to get the correct resolution
+            if (!writers_initialized_) {
+                int codec = cv::VideoWriter::fourcc('M', 'J', 'P', 'G');
+                
+                // Saving to the absolute path so you don't lose them!
+                raw_writer_.open("/home/booster/raw_video.avi", codec, 30.0, frame.size(), true);
+                edge_writer_.open("/home/booster/edge_video.avi", codec, 30.0, frame.size(), true); 
+                
+                start_record_time_ = this->get_clock()->now();
+                writers_initialized_ = true;
+                RCLCPP_INFO(this->get_logger(), ">>> RECORDING 5 SECONDS OF VIDEO TO /home/booster/ <<<");
             }
+
+            // Calculate how much time has passed
+            auto elapsed = this->get_clock()->now() - start_record_time_;
+
+            if (elapsed.seconds() <= 5.0) {
+                // Write the raw color frame
+                raw_writer_.write(frame);
+                
+                // Convert 1-channel Edge image to 3-channel BGR so the VideoWriter doesn't crash
+                cv::Mat edges_bgr;
+                cv::cvtColor(edges, edges_bgr, cv::COLOR_GRAY2BGR);
+                edge_writer_.write(edges_bgr);
+            } else {
+                // Stop recording after 5 seconds!
+                RCLCPP_INFO(this->get_logger(), ">>> FINISHED RECORDING! Videos saved to /home/booster/ <<<");
+                raw_writer_.release();
+                edge_writer_.release();
+                is_recording_ = false; 
+            }
+        }
+        // ==========================================================
+
+        if (detector_) {
+            try { auto detections = detector_->Inference(frame); } 
+            catch (const std::exception& e) { RCLCPP_WARN_ONCE(this->get_logger(), "AI Inference failed"); }
         }
 
         // 4. Visualization (ROBOT HEADLESS MODE)
@@ -176,15 +208,25 @@ private:
             auto debug_msg = cv_bridge::CvImage(header, "mono8", edges).toImageMsg();
             debug_img_pub_->publish(*debug_msg);
         } catch (cv_bridge::Exception& e) {
-            RCLCPP_ERROR(this->get_logger(), "cv_bridge exception during publish: %s", e.what());
+            RCLCPP_ERROR(this->get_logger(), "cv_bridge exception: %s", e.what());
         }
     }
 
     std::shared_ptr<YoloDetector> detector_;
     rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr color_sub_;
     rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr debug_img_pub_;
+
+    // Variables for the video recorder
+    cv::VideoWriter raw_writer_;
+    cv::VideoWriter edge_writer_;
+    rclcpp::Time start_record_time_;
+    bool is_recording_ = true;
+    bool writers_initialized_ = false;
 };
 
+// ===========================================================================
+// 5. MAIN ENTRY POINT
+// ===========================================================================
 int main(int argc, char **argv) {
     rclcpp::init(argc, argv);
     auto node = std::make_shared<VisionNode>();
