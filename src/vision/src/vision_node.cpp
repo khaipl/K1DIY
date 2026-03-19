@@ -1,276 +1,213 @@
-#include <rclcpp/rclcpp.hpp>
-#include <sensor_msgs/msg/image.hpp>
-#include <cv_bridge/cv_bridge.h> // Still needed for publishing the debug mono8 image
-#include <opencv2/opencv.hpp>
-#include <opencv2/dnn.hpp>
-#include <memory>
-#include <vector>
+// =================================================================================================
+// Note: Please ensure the following variables are declared in your include/booster_vision/vision_node.h:
+// bool is_recording_ = true;
+// bool writers_initialized_ = false;
+// cv::VideoWriter raw_writer_;
+// cv::VideoWriter edge_writer_;
+// cv::VideoWriter depth_writer_;
+// rclcpp::Time start_record_time_;
+// rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr debug_img_pub_;
+// =================================================================================================
+
+#include "booster_vision/vision_node.h"
+
+#include <functional>
 #include <filesystem>
 
-// === [NEW INCLUDES FOR SYNCHRONIZATION] ===
-#include <message_filters/subscriber.h>
-#include <message_filters/sync_policies/approximate_time.h>
-#include <message_filters/synchronizer.h>
+#include <opencv2/imgproc.hpp> 
+#include <yaml-cpp/yaml.h>
+#include <cv_bridge/cv_bridge.h>
 
-// === [NAOVAK1 HARDWARE SPECIFIC] ===
-// Using the official Booster image bridge to handle Jetson NV12 camera formats
-#include "booster_vision/img_bridge.h"
+// [LIB] Internal Modules: Kept strictly to synchronization and image translation
+#include "booster_vision/base/data_syncer.hpp"     // Matches Color + Depth images by time
+#include "booster_vision/base/misc_utils.hpp"
+#include "booster_vision/img_bridge.h"             // Converts ROS images to OpenCV
 
-// Simple internal struct to hold detections until we need custom ROS messages
-struct Detection {
-    int class_id;
-    std::string class_name;
-    float confidence;
-    cv::Rect bbox;
-};
+namespace booster_vision {
+// =================================================================================================
+// [CONSTRUCTOR]
+// Role: Creates the ROS 2 node with the given name.
+// =================================================================================================
+VisionNode::VisionNode(const std::string &node_name) : Node(node_name) {
+// We leave this empty because all the heavy lifting is done in the Init() function!
+}
 
-// ===========================================================================
-// 1. STRATEGY PATTERN: THE BASE INTERFACE
-// ===========================================================================
-class YoloDetector {
-public:
-    virtual ~YoloDetector() = default;
-    virtual std::vector<Detection> Inference(const cv::Mat& frame) = 0;
-};
-
-// ===========================================================================
-// 2. STRATEGY A: ONNX (LAPTOP / CPU)
-// ===========================================================================
-class OnnxDetector : public YoloDetector {
-public:
-    OnnxDetector(const std::string& model_path) {
-        if (model_path.empty() || !std::filesystem::exists(model_path)) {
-            std::cerr << "[OnnxDetector] ERROR: Model file not found at " << model_path << ". AI disabled." << std::endl;
-            return;
-        }
-        net_ = cv::dnn::readNetFromONNX(model_path);
+// =================================================================================================
+// [FUNCTION] Init
+// Role: The Setup Phase. Loads YAML configs and initializes DataSyncer without AI baggage.
+// =================================================================================================
+void VisionNode::Init(const std::string &cfg_template_path, const std::string &cfg_path) {
+    
+    // --- 1. Load Configuration ---
+    if (!std::filesystem::exists(cfg_template_path)) {
+        std::cerr << "Error: Configuration template file '" << cfg_path << "' does not exist." << std::endl;
+        return;
     }
 
-    std::vector<Detection> Inference(const cv::Mat& frame) override {
-        std::vector<Detection> results;
-        if (net_.empty() || frame.empty()) return results;
-
-        // YOLOv8 preprocessing
-        cv::Mat blob;
-        cv::dnn::blobFromImage(frame, blob, 1.0 / 255.0, cv::Size(640, 640), cv::Scalar(), true, false);
-        net_.setInput(blob);
-
-        std::vector<cv::Mat> outputs;
-        net_.forward(outputs, net_.getUnconnectedOutLayersNames());
-
-        // Note: Actual YOLOv8 post-processing (NMS, bounding box math) goes here!
-        std::cout << "ONNX Inference executed successfully!" << std::endl;
-        
-        return results;
-    }
-private:
-    cv::dnn::Net net_;
-};
-
-// ===========================================================================
-// 3. STRATEGY B: TENSORRT (ROBOT / GPU)
-// ===========================================================================
-#ifdef USE_TENSORRT
-class TrtDetector : public YoloDetector {
-public:
-    TrtDetector(const std::string& model_path) {
-        std::cout << "[TrtDetector] Initializing TensorRT Engine from: " << model_path << std::endl;
-        // TensorRT loading logic goes here
-    }
-    std::vector<Detection> Inference(const cv::Mat& frame) override {
-        std::vector<Detection> results;
-        std::cout << "TensorRT Inference executed!" << std::endl;
-        return results;
-    }
-};
-#endif
-
-// ===========================================================================
-// 4. THE MAIN ROS NODE
-// ===========================================================================
-class VisionNode : public rclcpp::Node {
-public:
-    VisionNode() : Node("vision_node") {
-        
-        // --- A. Load ROS 2 Parameters ---
-        // New toggle for safe testing vs full AI
-        this->declare_parameter<bool>("enable_ai", false);
-        this->declare_parameter<std::string>("backend", "cpu_onnx");
-        this->declare_parameter<std::string>("model_path", "src/vision/model/yolov8_k1.onnx");
-        // Declare color topic of left eye view
-        this->declare_parameter<std::string>("camera_topic", "/booster_camera_bridge/image_left_raw");
-        // Declare depth topic for 3D distance
-        this->declare_parameter<std::string>("depth_topic", "/booster_camera_bridge/StereoNetNode/stereonet_depth");
-
-        bool enable_ai = this->get_parameter("enable_ai").as_bool();
-        std::string backend = this->get_parameter("backend").as_string();
-        std::string model_path = this->get_parameter("model_path").as_string();
-        std::string camera_topic = this->get_parameter("camera_topic").as_string();
-        std::string depth_topic = this->get_parameter("depth_topic").as_string();
-
-        RCLCPP_INFO(this->get_logger(), "Starting Vision Node.");
-
-        // --- B. AI Feature Toggle Logic ---
-        if (enable_ai) {
-            RCLCPP_INFO(this->get_logger(), "AI Mode ENABLED. Loading %s model...", backend.c_str());
-
-            if (backend == "cpu_onnx") {
-                detector_ = std::make_shared<OnnxDetector>(model_path);
-            } 
-            else if (backend == "gpu_trt") {
-#ifdef USE_TENSORRT
-                detector_ = std::make_shared<TrtDetector>(model_path);
-#else
-                RCLCPP_ERROR(this->get_logger(), "Requested GPU, but built without TensorRT! Shutting down.");
-                rclcpp::shutdown();
-                return;
-#endif
-            }
-        } else {
-            // SAFE MODE: Bypass AI completely for camera/edge-detection testing
-            RCLCPP_INFO(this->get_logger(), "AI Mode DISABLED. Running in camera/edge-detection only mode.");
-            detector_ = nullptr;
-        }
-        
-        // Listen to the robot's camera (UPDATED FOR STEREO SYNC)
-        auto qos = rclcpp::QoS(rclcpp::SensorDataQoS());
-        color_sub_.subscribe(this, camera_topic, qos.get_rmw_qos_profile());
-        depth_sub_.subscribe(this, depth_topic, qos.get_rmw_qos_profile());
-
-        // ApproximateTime policy to pair Color and Depth frames together even if hardware is slightly out of sync
-        sync_ = std::make_shared<message_filters::Synchronizer<SyncPolicy>>(SyncPolicy(10), color_sub_, depth_sub_);
-        sync_->registerCallback(std::bind(&VisionNode::ColorDepthCallback, this, std::placeholders::_1, std::placeholders::_2));
-
-        // Publisher for the laptop to view the edges
-        debug_img_pub_ = this->create_publisher<sensor_msgs::msg::Image>("/vision/debug_edges", 10);
+    // Load into a temporary root node first
+    YAML::Node node = YAML::LoadFile(cfg_template_path);
+    if (!std::filesystem::exists(cfg_path)) {
+        std::cout << "Warning: Configuration file empty!" << std::endl;
+    } else {
+        YAML::Node cfg_node = YAML::LoadFile(cfg_path);
+        MergeYAML(node, cfg_node);
     }
 
-private:
-    void ColorDepthCallback(const sensor_msgs::msg::Image::ConstSharedPtr& color_msg,
-                            const sensor_msgs::msg::Image::ConstSharedPtr& depth_msg) {
-        
-        // 1. Convert ROS Image -> OpenCV Mat using the K1's specific image bridge
-        cv::Mat frame, depth_frame;
-        try {
-            // This safely handles the NV12 hardware encoding from the Jetson
-            frame = booster_vision::toCVMat(*color_msg);
-            // Handles MONO16 endianness for depth
-            depth_frame = booster_vision::toCVMat(*depth_msg); 
-        } catch (const std::exception& e) {
-            RCLCPP_ERROR(this->get_logger(), "booster_vision::img_bridge exception: %s", e.what());
-            return;
-        }
+    std::cout << "loaded file: " << std::endl << node << std::endl;
 
-        if (frame.empty() || depth_frame.empty()) {
-            RCLCPP_WARN(this->get_logger(), "Received empty frame from img_bridge.");
-            return;
-        }
+    // --- 2. Load Camera Mathematics (Calibration) ---
+    if (!node["camera"]) {
+        std::cerr << "no camera param found here" << std::endl;
+        return;
+    } else {
+        camera_type_ = node["camera"]["type"].as<std::string>();
+        intr_ = Intrinsics(node["camera"]["intrin"]);
+        p_eye2head_ = as_or<Pose>(node["camera"]["extrin"], Pose());
 
-        // 2. Basic Image Processing (Edge Detection)
-        cv::Mat gray, edges;
-        cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
-        cv::Canny(gray, edges, 50, 150);
+        float pitch_comp = as_or<float>(node["camera"]["pitch_compensation"], 0.0);
+        float yaw_comp = as_or<float>(node["camera"]["yaw_compensation"], 0.0);
+        p_headprime2head_ = Pose(0, 0, 0, 0, pitch_comp * M_PI / 180, yaw_comp * M_PI / 180);
+    }
 
-        // --- NEW: Process Depth Color Map (Distance to Color) ---
+    // --- 3. Setup Synchronization (Replaces message_filters) ---
+    use_depth_ = as_or<bool>(node["use_depth"], false);
+    data_syncer_ = std::make_shared<DataSyncer>(use_depth_);
+
+    // --- 4. ROS 2 Communication Setup ---
+    std::cout << "current camera_type : " << camera_type_ << std::endl;
+    
+    // Dynamically loading camera/depth topics from vision.yaml
+    std::string color_topic = as_or<std::string>(node["camera_topic"], "/booster_camera_bridge/image_left_raw");
+    std::string depth_topic = as_or<std::string>(node["depth_topic"], "/booster_camera_bridge/StereoNetNode/stereonet_depth");
+
+    std::cout << "Listening to Color: " << color_topic << std::endl;
+    std::cout << "Listening to Depth: " << depth_topic << std::endl;
+
+    it_ = std::make_shared<image_transport::ImageTransport>(shared_from_this());
+    color_sub_ = it_->subscribe(color_topic, 1, std::bind(&VisionNode::ColorCallback, this, std::placeholders::_1));
+    depth_sub_ = it_->subscribe(depth_topic, 1, std::bind(&VisionNode::DepthCallback, this, std::placeholders::_1));
+    pose_sub_ = this->create_subscription<geometry_msgs::msg::Pose>("/head_pose", 10, std::bind(&VisionNode::PoseCallBack, this, std::placeholders::_1));
+
+    // Publisher for rqt_image_view (Debugging)
+    debug_img_pub_ = this->create_publisher<sensor_msgs::msg::Image>("/vision/debug_edges", 10);
+}
+
+// =================================================================================================
+// [FUNCTION] ColorCallback
+// Role: Retrieves synchronized frames, processes edges, and records video.
+// =================================================================================================
+void VisionNode::ColorCallback(const sensor_msgs::msg::Image::ConstSharedPtr &msg) {
+    if (!msg) {
+        std::cerr << "empty image message." << std::endl;
+        return;
+    }
+
+    // 1. Convert ROS Image Message -> OpenCV Matrix
+    cv::Mat img;
+    try {
+        img = toCVMat(*msg);
+    } catch (std::exception &e) {
+        std::cerr << "converting msg to cv::Mat failed: " << e.what() << std::endl;
+        return;
+    }
+
+    double timestamp = msg->header.stamp.sec + static_cast<double>(msg->header.stamp.nanosec) * 1e-9;
+
+    // 2. TIME MACHINE (Synchronization via DataSyncer)
+    SyncedDataBlock synced_data = data_syncer_->getSyncedDataBlock(ColorDataBlock(img, timestamp));
+    cv::Mat color = synced_data.color_data.data;
+    cv::Mat depth = synced_data.depth_data.data;
+
+    // Safety check: if DataSyncer didn't find a match yet, skip processing
+    if (color.empty()) return;
+
+    // 3. Basic Image Processing (Edge Detection)
+    cv::Mat gray, edges;
+    cv::cvtColor(color, gray, cv::COLOR_BGR2GRAY);
+    cv::Canny(gray, edges, 50, 150);
+
+    // ==========================================================
+    // --- [K1DIY FEATURE] 5-SECOND DUAL VIDEO RECORDER ---
+    // ==========================================================
+    if (is_recording_ && !depth.empty()) {
         cv::Mat depth_8u, depth_color;
-        // Squashes the 16-bit millimeter data down to an 8-bit scale
-        cv::normalize(depth_frame, depth_8u, 0, 255, cv::NORM_MINMAX, CV_8U);
-        // Applies the Heatmap (Red = close, Blue = far)
+        cv::Mat edges_bgr;
+        
+        cv::cvtColor(edges, edges_bgr, cv::COLOR_GRAY2BGR);
+        cv::normalize(depth, depth_8u, 0, 255, cv::NORM_MINMAX, CV_8U);
         cv::applyColorMap(depth_8u, depth_color, cv::COLORMAP_JET);
 
-
-        // ==========================================================
-        // --- NEW FEATURE: 5-SECOND DUAL VIDEO RECORDER ---
-        // (Now upgraded to Triple video recorder for Depth!)
-        // ==========================================================
-        if (is_recording_) {
-            // Initialize writers on the very first frame to get the correct resolution
-            if (!writers_initialized_) {
-                int codec = cv::VideoWriter::fourcc('M', 'J', 'P', 'G');
-                
-                // --- NEW: Ensure the DIY data directory exists ---
-                std::string save_path = "data/test/";
-                std::filesystem::create_directories(save_path);
-                
-                // Saving to the new path in K1DIY/data/test/
-                raw_writer_.open(save_path + "raw_video.avi", codec, 30.0, frame.size(), true);
-                edge_writer_.open(save_path + "edge_video.avi", codec, 30.0, frame.size(), true); 
-                depth_writer_.open(save_path + "depth_video.avi", codec, 30.0, depth_color.size(), true); 
-                
-                start_record_time_ = this->get_clock()->now();
-                writers_initialized_ = true;
-                RCLCPP_INFO(this->get_logger(), ">>> RECORDING 5 SECONDS OF VIDEO TO %s <<<", save_path.c_str());
-            }
-
-            // Calculate how much time has passed
-            auto elapsed = this->get_clock()->now() - start_record_time_;
-
-            if (elapsed.seconds() <= 5.0) {
-                // Write the raw color frame
-                raw_writer_.write(frame);
-                
-                // Convert 1-channel Edge image to 3-channel BGR so the VideoWriter doesn't crash
-                cv::Mat edges_bgr;
-                cv::cvtColor(edges, edges_bgr, cv::COLOR_GRAY2BGR);
-                edge_writer_.write(edges_bgr);
-
-                // Write the colorized depth map
-                depth_writer_.write(depth_color);
-            } else {
-                // Stop recording after 5 seconds!
-                RCLCPP_INFO(this->get_logger(), ">>> FINISHED RECORDING! Videos saved to K1DIY/data/test/ <<<");
-                raw_writer_.release();
-                edge_writer_.release();
-                depth_writer_.release();
-                is_recording_ = false;
-            }
-        }
-        // ==========================================================
-
-        if (detector_) {
-            try { auto detections = detector_->Inference(frame); }
-            catch (const std::exception& e) { RCLCPP_WARN_ONCE(this->get_logger(), "AI Inference failed"); }
+        if (!writers_initialized_) {
+            int codec = cv::VideoWriter::fourcc('M', 'J', 'P', 'G');
+            std::string save_path = "data/test/";
+            std::filesystem::create_directories(save_path);
+            
+            raw_writer_.open(save_path + "raw_video.avi", codec, 30.0, color.size(), true);
+            edge_writer_.open(save_path + "edge_video.avi", codec, 30.0, edges_bgr.size(), true); 
+            depth_writer_.open(save_path + "depth_video.avi", codec, 30.0, depth_color.size(), true); 
+            
+            start_record_time_ = this->get_clock()->now();
+            writers_initialized_ = true;
+            std::cout << ">>> RECORDING 5 SECONDS OF VIDEO TO " << save_path << " <<<" << std::endl;
         }
 
-        // 4. Visualization (ROBOT HEADLESS MODE)
-        std_msgs::msg::Header header;
-        header.stamp = this->get_clock()->now();
-        header.frame_id = "camera_link";
-
-        try {
-            // We can still use cv_bridge here because we are encoding a simple mono8 image to send OUT
-            auto debug_msg = cv_bridge::CvImage(header, "mono8", edges).toImageMsg();
-            debug_img_pub_->publish(*debug_msg);
-        } catch (cv_bridge::Exception& e) {
-            RCLCPP_ERROR(this->get_logger(), "cv_bridge exception: %s", e.what());
+        auto elapsed = this->get_clock()->now() - start_record_time_;
+        if (elapsed.seconds() <= 5.0) {
+            raw_writer_.write(color);
+            edge_writer_.write(edges_bgr);
+            depth_writer_.write(depth_color);
+        } else {
+            std::cout << ">>> FINISHED RECORDING! Videos saved to K1DIY/data/test/ <<<" << std::endl;
+            raw_writer_.release();
+            edge_writer_.release();
+            depth_writer_.release();
+            is_recording_ = false;
         }
     }
 
-    std::shared_ptr<YoloDetector> detector_;
-    rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr debug_img_pub_;
+    // 4. Visualization Publisher (For rqt_image_view)
+    std_msgs::msg::Header header;
+    header.stamp = msg->header.stamp; // Keep the original timestamp
+    header.frame_id = "camera_link";
 
-    // --- Sync Policy Definitions for Dual-Camera ---
-    using SyncPolicy = message_filters::sync_policies::ApproximateTime<sensor_msgs::msg::Image, sensor_msgs::msg::Image>;
-    message_filters::Subscriber<sensor_msgs::msg::Image> color_sub_;
-    message_filters::Subscriber<sensor_msgs::msg::Image> depth_sub_;
-    std::shared_ptr<message_filters::Synchronizer<SyncPolicy>> sync_;
-
-    // Variables for the video recorder
-    cv::VideoWriter raw_writer_;
-    cv::VideoWriter edge_writer_;
-    cv::VideoWriter depth_writer_;
-    rclcpp::Time start_record_time_;
-    bool is_recording_ = true;
-    bool writers_initialized_ = false;
-};
-
-// ===========================================================================
-// 5. MAIN ENTRY POINT
-// ===========================================================================
-int main(int argc, char **argv) {
-    rclcpp::init(argc, argv);
-    auto node = std::make_shared<VisionNode>();
-    rclcpp::spin(node);
-    rclcpp::shutdown();
-    return 0;
+    try {
+        auto debug_msg = cv_bridge::CvImage(header, "mono8", edges).toImageMsg();
+        debug_img_pub_->publish(*debug_msg);
+    } catch (cv_bridge::Exception& e) {
+        std::cerr << "cv_bridge exception: " << e.what() << std::endl;
+    }
 }
+
+// =================================================================================================
+// [FUNCTION] DepthCallback
+// Role: Called when the depth camera sends data. Stores it in DataSyncer.
+// =================================================================================================
+void VisionNode::DepthCallback(const sensor_msgs::msg::Image::ConstSharedPtr &msg) {
+    cv::Mat img;
+    try {
+        img = toCVMat(*msg);
+    } catch (std::exception &e) {
+        std::cerr << "cv_bridge exception " << e.what() << std::endl;
+        return;
+    }
+
+    if (img.empty() || img.depth() != CV_16U) return;
+
+    double timestamp = msg->header.stamp.sec + static_cast<double>(msg->header.stamp.nanosec) * 1e-9;
+    data_syncer_->AddDepth(DepthDataBlock(img, timestamp));
+}
+
+// =================================================================================================
+// [FUNCTION] PoseCallBack
+// Role: Called when the robot's motors report the head position. Stores it in DataSyncer.
+// =================================================================================================
+void VisionNode::PoseCallBack(const geometry_msgs::msg::Pose::SharedPtr msg) {
+    auto current_time = this->get_clock()->now();
+    double timestamp = static_cast<double>(current_time.nanoseconds()) * 1e-9;
+
+    auto pose = Pose(msg->position.x, msg->position.y, msg->position.z, 
+                     msg->orientation.x, msg->orientation.y, msg->orientation.z, msg->orientation.w);
+    data_syncer_->AddPose(PoseDataBlock(pose, timestamp));
+}
+
+} // namespace booster_vision
