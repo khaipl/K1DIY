@@ -16,7 +16,8 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(sensor_msgs REQUIRED) 
-find_package(cv_bridge REQUIRED)   
+find_package(cv_bridge REQUIRED)
+find_package(message_filters REQUIRED)
 
 # ==========================================
 # 2. OPTIONAL GPU DEPENDENCIES (The "Shield")
@@ -45,11 +46,12 @@ target_include_directories(vision_node PRIVATE
 # Link OpenCV and ROS 2 dependencies
 target_link_libraries(vision_node ${OpenCV_LIBRARIES})
 
-# Link ROS 2 packages
+# Link ROS 2 packages including message_filters
 ament_target_dependencies(vision_node 
   rclcpp
   sensor_msgs
   cv_bridge
+  message_filters
 )
 
 # ==========================================
@@ -59,10 +61,7 @@ ament_target_dependencies(vision_node
 # If not (Laptop), it safely skips this block.
 if(CUDA_FOUND AND TENSORRT_LIBRARY AND TENSORRT_INCLUDE_DIR)
     message(STATUS "TensorRT found! Enabling GPU acceleration support (USE_TENSORRT).")
-    
-    # This creates the #ifdef USE_TENSORRT flag in your C++ code
     target_compile_definitions(vision_node PRIVATE USE_TENSORRT) 
-    
     target_include_directories(vision_node PRIVATE ${TENSORRT_INCLUDE_DIR})
     target_link_libraries(vision_node ${TENSORRT_LIBRARY})
 else()

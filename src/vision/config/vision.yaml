@@ -6,7 +6,9 @@ vision_node:
     enable_ai: false # Set to true to run YOLOv8
     backend: "cpu_onnx" # Use "gpu_trt" for Jetson/TensorRT
     model_path: "src/vision/model/yolov8_k1.onnx" # DIY model path
-    camera_topic: "/booster_camera_bridge/image_left_raw" # Custom camera topic
+    camera_topic: "/booster_camera_bridge/image_left_raw" # CUSTOM CAMERA TOPIC
+    depth_topic: "/booster_camera_bridge/StereoNetNode/stereonet_depth" # CUSTOM DEEP TOPIC
+
     
     # ==========================================
     # --- CORE HARDWARE & CAMERA CONFIG ---

@@ -6,3 +6,4 @@ install
 brain_local.yaml
 vision_local.yaml
 __pycache__/
+data
