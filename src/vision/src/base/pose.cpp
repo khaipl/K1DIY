@@ -6,15 +6,15 @@ namespace booster_vision {
 
 Pose::Pose(const float &x, const float &y, const float &z,
            const float &roll, const float &pitch, const float &yaw) {
-    cv::Mat Rx = (cv::Mat_<double>(3, 3) << 1, 0, 0,
+    cv::Mat Rx = (cv::Mat_<float>(3, 3) << 1, 0, 0,
                   0, cos(roll), -sin(roll),
                   0, sin(roll), cos(roll));
 
-    cv::Mat Ry = (cv::Mat_<double>(3, 3) << cos(pitch), 0, sin(pitch),
+    cv::Mat Ry = (cv::Mat_<float>(3, 3) << cos(pitch), 0, sin(pitch),
                   0, 1, 0,
                   -sin(pitch), 0, cos(pitch));
 
-    cv::Mat Rz = (cv::Mat_<double>(3, 3) << cos(yaw), -sin(yaw), 0,
+    cv::Mat Rz = (cv::Mat_<float>(3, 3) << cos(yaw), -sin(yaw), 0,
                   sin(yaw), cos(yaw), 0,
                   0, 0, 1);
     cv::Mat R = Rz * Ry * Rx;
