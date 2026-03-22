@@ -1,16 +1,9 @@
 # ==========================================
-# --- DIY & DEVELOPMENT SETTINGS ---
-# ==========================================
-enable_ai: false 
-backend: "cpu_onnx" 
-model_path: "src/vision/model/yolov8_k1.onnx" 
-camera_topic: "/booster_camera_bridge/image_left_raw" 
-depth_topic: "/booster_camera_bridge/StereoNetNode/stereonet_depth" 
-
-# ==========================================
 # --- CORE HARDWARE & CAMERA CONFIG ---
 # ==========================================
 camera:
+  camera_topic: "/booster_camera_bridge/image_left_raw" 
+  depth_topic: "/booster_camera_bridge/StereoNetNode/stereonet_depth" 
   type: "d-robotics" 
   intrin: 
     fx: 213.62648
@@ -32,7 +25,9 @@ camera:
 # --- DETECTION & SEGMENTATION MODELS ---
 # ==========================================
 detection_model:
-  model_path: "./src/vision/model/best_digua_second_10.3.engine" 
+  backend: "cpu_onnx" # Options: "cpu_onnx" or "tensorrt"
+  model_path_onnx: "./src/vision/model/sim_data_seg_0126.onnx" 
+  model_path_tensorrt: "./src/vision/model/best_digua_second_10.3.engine"
   confidence_threshold: 0.2
   nms_threshold: 0.4
   classnames: [Ball, Goalpost, Person, LCross, TCross, XCross, PenaltyPoint, Opponent, BRMarker]

@@ -1,0 +1,323 @@
+.
+├── chrony_patch
+│   ├── local_patch
+│   │   ├── chrony.conf
+│   │   └── install.sh
+│   ├── remote_patch
+│   │   ├── chrony_4.2-2ubuntu2_arm64.deb
+│   │   ├── chrony.conf
+│   │   ├── chrony-presync.sh
+│   │   ├── chrony.service
+│   │   ├── install.sh
+│   │   └── ntpdate_1_3a4.2.8p15+dfsg-1ubuntu2_arm64.deb
+│   └── update
+├── configs
+├── data
+│   └── test
+│       ├── depth_video.avi
+│       ├── depth_video.mp4
+│       ├── edge_video.avi
+│       ├── edge_video.mp4
+│       ├── img1.jpg
+│       ├── raw_video.avi
+│       └── raw_video.mp4
+├── K1DIY_structure.txt
+├── LICENSE
+├── README_debug.md
+├── README.md
+├── scripts
+│   └── build.sh
+├── src
+│   ├── brain
+│   ├── interface
+│   │   └── vision_interface
+│   │       ├── CMakeLists.txt
+│   │       ├── msg
+│   │       │   ├── Ball.msg
+│   │       │   ├── CalParam.msg
+│   │       │   ├── DetectedObject.msg
+│   │       │   ├── Detections.msg
+│   │       │   ├── DetectionsTrack.msg
+│   │       │   ├── ImageHeadPosition.msg
+│   │       │   ├── LineSegments.msg
+│   │       │   ├── SegmentationLine.msg
+│   │       │   ├── SegmentationPoint.msg
+│   │       │   └── SegmentationResult.msg
+│   │       └── package.xml
+│   └── vision
+│       ├── CMakeLists.txt
+│       ├── config
+│       │   └── vision.yaml
+│       ├── include
+│       │   └── booster_vision
+│       │       ├── base
+│       │       │   ├── data_logger.hpp
+│       │       │   ├── data_syncer.hpp
+│       │       │   ├── intrin.h
+│       │       │   ├── misc_utils.hpp
+│       │       │   ├── pointcloud_process.h
+│       │       │   └── pose.h
+│       │       ├── calibration
+│       │       │   ├── board_detector.h
+│       │       │   ├── calibration.h
+│       │       │   └── optimizor.hpp
+│       │       ├── color_classifier.hpp
+│       │       ├── img_bridge.h
+│       │       ├── model
+│       │       │   ├── data_types.h
+│       │       │   ├── detector.h
+│       │       │   ├── onnx
+│       │       │   │   ├── detection_impl.h
+│       │       │   │   └── segmentation_impl.h
+│       │       │   ├── segmentor.h
+│       │       │   └── trt
+│       │       │       ├── block.h
+│       │       │       ├── calibrator.h
+│       │       │       ├── config.h
+│       │       │       ├── cuda_utils.h
+│       │       │       ├── impl.h
+│       │       │       ├── logging.h
+│       │       │       ├── macros.h
+│       │       │       ├── model.h
+│       │       │       ├── postprocess.h
+│       │       │       ├── preprocess.h
+│       │       │       ├── types.h
+│       │       │       ├── utils.h
+│       │       │       └── yololayer.h
+│       │       ├── pose_estimator
+│       │       │   ├── hungarian_matching.hpp
+│       │       │   └── pose_estimator.h
+│       │       └── vision_node.h
+│       ├── launch
+│       │   └── launch.py
+│       ├── model
+│       │   ├── best_digua_10.3.engine
+│       │   ├── best_digua_1223_10.3.engine
+│       │   ├── best_digua_second_10.3.engine
+│       │   ├── best_seg_orin_10.3.engine
+│       │   ├── best_seg_orin.engine
+│       │   ├── k1_realsense_10.3.engine
+│       │   ├── sim_data_det_0126.onnx
+│       │   └── sim_data_seg_0126.onnx
+│       ├── package.xml
+│       ├── scripts
+│       │   ├── install_onnxruntime.sh
+│       │   └── model
+│       │       ├── build_engine.sh
+│       │       ├── gen_wts.py
+│       │       └── requirements.txt
+│       ├── src
+│       │   ├── base
+│       │   │   ├── CMakeLists.txt
+│       │   │   ├── data_syncer.cpp
+│       │   │   ├── intrin.cpp
+│       │   │   ├── pointcloud_process.cpp
+│       │   │   └── pose.cpp
+│       │   ├── CMakeLists.txt
+│       │   ├── depth_mock.py
+│       │   ├── img_bridge.cpp
+│       │   ├── main.cpp
+│       │   ├── model
+│       │   │   ├── CMakeLists.txt
+│       │   │   ├── detector.cc
+│       │   │   ├── onnx
+│       │   │   │   ├── CMakeLists.txt
+│       │   │   │   ├── detection_impl.cpp
+│       │   │   │   └── segmentation_impl.cpp
+│       │   │   ├── segmentor.cc
+│       │   │   └── trt
+│       │   │       ├── block.cpp
+│       │   │       ├── calibrator.cpp
+│       │   │       ├── CMakeLists.txt
+│       │   │       ├── impl.cpp
+│       │   │       ├── model.cpp
+│       │   │       ├── postprocess.cpp
+│       │   │       ├── postprocess.cu
+│       │   │       ├── preprocess.cu
+│       │   │       ├── yololayer.cu
+│       │   │       ├── yolov8_det.cpp
+│       │   │       └── yolov8_seg.cpp
+│       │   ├── pose_estimator
+│       │   │   ├── CMakeLists.txt
+│       │   │   └── pose_estimator.cpp
+│       │   └── vision_node.cpp
+│       └── thirdparty
+│           ├── CMakeLists.txt
+│           ├── googletest
+│           │   ├── cmake
+│           │   │   ├── Config.cmake.in
+│           │   │   ├── gtest_main.pc.in
+│           │   │   ├── gtest.pc.in
+│           │   │   ├── internal_utils.cmake
+│           │   │   └── libgtest.la.in
+│           │   ├── CMakeLists.txt
+│           │   ├── include
+│           │   │   └── gtest
+│           │   │       ├── gtest-death-test.h
+│           │   │       ├── gtest.h
+│           │   │       ├── gtest-matchers.h
+│           │   │       ├── gtest-message.h
+│           │   │       ├── gtest-param-test.h
+│           │   │       ├── gtest_pred_impl.h
+│           │   │       ├── gtest-printers.h
+│           │   │       ├── gtest_prod.h
+│           │   │       ├── gtest-spi.h
+│           │   │       ├── gtest-test-part.h
+│           │   │       ├── gtest-typed-test.h
+│           │   │       └── internal
+│           │   │           ├── custom
+│           │   │           │   ├── gtest.h
+│           │   │           │   ├── gtest-port.h
+│           │   │           │   ├── gtest-printers.h
+│           │   │           │   └── README.md
+│           │   │           ├── gtest-death-test-internal.h
+│           │   │           ├── gtest-filepath.h
+│           │   │           ├── gtest-internal.h
+│           │   │           ├── gtest-param-util.h
+│           │   │           ├── gtest-port-arch.h
+│           │   │           ├── gtest-port.h
+│           │   │           ├── gtest-string.h
+│           │   │           └── gtest-type-util.h
+│           │   └── src
+│           │       ├── gtest-all.cc
+│           │       ├── gtest.cc
+│           │       ├── gtest-death-test.cc
+│           │       ├── gtest-filepath.cc
+│           │       ├── gtest-internal-inl.h
+│           │       ├── gtest_main.cc
+│           │       ├── gtest-matchers.cc
+│           │       ├── gtest-port.cc
+│           │       ├── gtest-printers.cc
+│           │       ├── gtest-test-part.cc
+│           │       └── gtest-typed-test.cc
+│           ├── include
+│           │   ├── ceres
+│           │   │   ├── autodiff_cost_function.h
+│           │   │   ├── autodiff_first_order_function.h
+│           │   │   ├── autodiff_manifold.h
+│           │   │   ├── c_api.h
+│           │   │   ├── ceres.h
+│           │   │   ├── conditioned_cost_function.h
+│           │   │   ├── constants.h
+│           │   │   ├── context.h
+│           │   │   ├── cost_function.h
+│           │   │   ├── cost_function_to_functor.h
+│           │   │   ├── covariance.h
+│           │   │   ├── crs_matrix.h
+│           │   │   ├── cubic_interpolation.h
+│           │   │   ├── dynamic_autodiff_cost_function.h
+│           │   │   ├── dynamic_cost_function.h
+│           │   │   ├── dynamic_cost_function_to_functor.h
+│           │   │   ├── dynamic_numeric_diff_cost_function.h
+│           │   │   ├── evaluation_callback.h
+│           │   │   ├── first_order_function.h
+│           │   │   ├── gradient_checker.h
+│           │   │   ├── gradient_problem.h
+│           │   │   ├── gradient_problem_solver.h
+│           │   │   ├── internal
+│           │   │   │   ├── array_selector.h
+│           │   │   │   ├── autodiff.h
+│           │   │   │   ├── config.h
+│           │   │   │   ├── disable_warnings.h
+│           │   │   │   ├── eigen.h
+│           │   │   │   ├── euler_angles.h
+│           │   │   │   ├── export.h
+│           │   │   │   ├── fixed_array.h
+│           │   │   │   ├── householder_vector.h
+│           │   │   │   ├── integer_sequence_algorithm.h
+│           │   │   │   ├── jet_traits.h
+│           │   │   │   ├── line_parameterization.h
+│           │   │   │   ├── memory.h
+│           │   │   │   ├── numeric_diff.h
+│           │   │   │   ├── parameter_dims.h
+│           │   │   │   ├── port.h
+│           │   │   │   ├── reenable_warnings.h
+│           │   │   │   ├── sphere_manifold_functions.h
+│           │   │   │   └── variadic_evaluate.h
+│           │   │   ├── iteration_callback.h
+│           │   │   ├── jet_fwd.h
+│           │   │   ├── jet.h
+│           │   │   ├── line_manifold.h
+│           │   │   ├── loss_function.h
+│           │   │   ├── manifold.h
+│           │   │   ├── manifold_test_utils.h
+│           │   │   ├── normal_prior.h
+│           │   │   ├── numeric_diff_cost_function.h
+│           │   │   ├── numeric_diff_first_order_function.h
+│           │   │   ├── numeric_diff_options.h
+│           │   │   ├── ordered_groups.h
+│           │   │   ├── problem.h
+│           │   │   ├── product_manifold.h
+│           │   │   ├── rotation.h
+│           │   │   ├── sized_cost_function.h
+│           │   │   ├── solver.h
+│           │   │   ├── sphere_manifold.h
+│           │   │   ├── tiny_solver_autodiff_function.h
+│           │   │   ├── tiny_solver_cost_function_adapter.h
+│           │   │   ├── tiny_solver.h
+│           │   │   ├── types.h
+│           │   │   └── version.h
+│           │   └── munkres-cpp
+│           │       ├── adapters
+│           │       │   ├── matrix_armadillo.h
+│           │       │   ├── matrix_boost.h
+│           │       │   ├── matrix_eigen.h
+│           │       │   ├── matrix_opencv.h
+│           │       │   ├── matrix_qt.h
+│           │       │   └── matrix_std_2d_vector.h
+│           │       ├── matrix_base.h
+│           │       ├── matrix.h
+│           │       ├── munkres.h
+│           │       └── utils.h
+│           └── lib
+│               ├── cmake
+│               │   └── Ceres
+│               │       ├── CeresConfig.cmake
+│               │       ├── CeresConfigVersion.cmake
+│               │       ├── CeresTargets.cmake
+│               │       └── CeresTargets-release.cmake
+│               ├── libceres_cuda_kernels.a
+│               ├── libceres.so
+│               ├── libceres.so.2.2.0
+│               └── libceres.so.4
+└── third_party
+    ├── install_onnxruntime.sh
+    ├── onnxruntime-linux-x64-1.23.2
+    │   ├── GIT_COMMIT_ID
+    │   ├── include
+    │   │   ├── core
+    │   │   │   └── providers
+    │   │   │       ├── custom_op_context.h
+    │   │   │       └── resource.h
+    │   │   ├── cpu_provider_factory.h
+    │   │   ├── onnxruntime_c_api.h
+    │   │   ├── onnxruntime_cxx_api.h
+    │   │   ├── onnxruntime_cxx_inline.h
+    │   │   ├── onnxruntime_ep_c_api.h
+    │   │   ├── onnxruntime_ep_device_ep_metadata_keys.h
+    │   │   ├── onnxruntime_float16.h
+    │   │   ├── onnxruntime_lite_custom_op.h
+    │   │   ├── onnxruntime_run_options_config_keys.h
+    │   │   ├── onnxruntime_session_options_config_keys.h
+    │   │   └── provider_options.h
+    │   ├── lib
+    │   │   ├── cmake
+    │   │   │   └── onnxruntime
+    │   │   │       ├── onnxruntimeConfig.cmake
+    │   │   │       ├── onnxruntimeConfigVersion.cmake
+    │   │   │       ├── onnxruntimeTargets.cmake
+    │   │   │       └── onnxruntimeTargets-release.cmake
+    │   │   ├── libonnxruntime_providers_shared.so
+    │   │   ├── libonnxruntime.so -> libonnxruntime.so.1
+    │   │   ├── libonnxruntime.so.1 -> libonnxruntime.so.1.23.2
+    │   │   ├── libonnxruntime.so.1.23.2
+    │   │   └── pkgconfig
+    │   │       └── libonnxruntime.pc
+    │   ├── LICENSE
+    │   ├── Privacy.md
+    │   ├── README.md
+    │   ├── ThirdPartyNotices.txt
+    │   └── VERSION_NUMBER
+    └── onnxruntime-linux-x64-1.23.2.tgz
+
+57 directories, 263 files
