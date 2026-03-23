@@ -189,8 +189,8 @@ std::vector<booster_vision::DetectionRes> YoloV8DetectorONNX::InferenceImpl(cons
     auto output_tensor = session_->Run(options_, input_node_names_.data(), &input_tensor, 1, output_node_names_.data(),
                                        output_node_names_.size());
     auto end = std::chrono::high_resolution_clock::now();
-    std::cout << "inference takes: " << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()
-              << "ms" << std::endl;
+    // std::cout << "inference takes: " << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()
+    //           << "ms" << std::endl;
 
     start = std::chrono::high_resolution_clock::now();
     Ort::TypeInfo type_info = output_tensor.front().GetTypeInfo();
@@ -269,8 +269,8 @@ std::vector<booster_vision::DetectionRes> YoloV8DetectorONNX::InferenceImpl(cons
         ret.push_back(result);
     }
     end = std::chrono::high_resolution_clock::now();
-    std::cout << "post process takes: " << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()
-              << "ms" << std::endl;
+    // std::cout << "post process takes: " << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()
+    //           << "ms" << std::endl;
     return ret;
 }
 

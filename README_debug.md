@@ -22,8 +22,8 @@ ros2 run v4l2_camera v4l2_camera_node --ros-args -p video_device:="/dev/video0" 
 Tricks the C++ node into believing the stereo hardware is active.
 
 ```bash
-source /opt/ros/humble/setup.bash
-python3 mock_depth.py
+source install/setup.bash
+python3 src/vision/scripts/depth_mock.py
 ```
 
 ### Terminal 3: Build and Launch the Vision Node

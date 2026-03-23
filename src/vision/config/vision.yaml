@@ -2,9 +2,11 @@
 # --- CORE HARDWARE & CAMERA CONFIG ---
 # ==========================================
 camera:
+  type: "d-robotics" # Options: "d-robotics" for real or "laptop" for testing
   camera_topic: "/booster_camera_bridge/image_left_raw" 
   depth_topic: "/booster_camera_bridge/StereoNetNode/stereonet_depth" 
-  type: "d-robotics" 
+  use_depth: true
+  save_data: true
   intrin: 
     fx: 213.62648
     fy: 213.62648
@@ -26,8 +28,8 @@ camera:
 # ==========================================
 detection_model:
   backend: "cpu_onnx" # Options: "cpu_onnx" or "tensorrt"
-  model_path_onnx: "./src/vision/model/sim_data_seg_0126.onnx" 
-  model_path_tensorrt: "./src/vision/model/best_digua_second_10.3.engine"
+  model_path_onnx: "./src/vision/model/sim_data_det_0126.onnx" 
+  model_path_tensorrt: "./src/vision/model/best_digua_10.3.engine"
   confidence_threshold: 0.2
   nms_threshold: 0.4
   classnames: [Ball, Goalpost, Person, LCross, TCross, XCross, PenaltyPoint, Opponent, BRMarker]
@@ -45,15 +47,15 @@ detection_model:
       BRMarker: 0.2
 
 segmentation_model: 
-  model_path: "./src/vision/model/best_seg_orin_10.3.engine"
+  backend: "cpu_onnx" # Options: "cpu_onnx" or "tensorrt"
+  model_path_onnx: "./src/vision/model/sim_data_seg_0126.onnx" 
+  model_path_tensorrt: "./src/vision/model/best_seg_orin_10.3.engine"
   confidence_threshold: 0.3
   nms_threshold: 0.9
 
 # ==========================================
 # --- POSE ESTIMATION (SIM2REAL LOGIC) ---
 # ==========================================
-use_depth: true 
-
 ball_pose_estimator:
   use_depth: false 
   radius: 0.109 

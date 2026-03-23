@@ -135,13 +135,12 @@ private:
     // --- [K1DIY FEATURES] Variables for Debugging & Recording ---
     // ==========================================================
     std::string camera_type_;
-    rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr debug_img_pub_; // RQT image viewer
     cv::VideoWriter raw_writer_;
     cv::VideoWriter edge_writer_;
     cv::VideoWriter depth_writer_;
     rclcpp::Time start_record_time_;
-    bool is_recording_ = true;
-    bool writers_initialized_ = false;
+    bool writers_initialized_ = true;
+    bool is_recording_ = false;
 };
 
 } // namespace booster_vision

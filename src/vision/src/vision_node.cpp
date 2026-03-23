@@ -138,7 +138,8 @@ void VisionNode::Init(const std::string &cfg_template_path, const std::string &c
     }
 
     // --- 5. Setup Synchronization (Replaces message_filters) ---
-    use_depth_ = as_or<bool>(node["use_depth"], false);
+    use_depth_ = as_or<bool>(node["camera"]["use_depth"], false);
+    is_recording_ = as_or<bool>(node["camera"]["save_data"], false);
     data_syncer_ = std::make_shared<DataSyncer>(use_depth_);
 
     // --- 6. ROS 2 Communication Setup ---
@@ -158,7 +159,6 @@ void VisionNode::Init(const std::string &cfg_template_path, const std::string &c
 
     // Publisher for rqt_image_view (Debugging)
     detection_pub_ = this->create_publisher<vision_interface::msg::Detections>("/booster_soccer/detection", rclcpp::QoS(1));
-    debug_img_pub_ = this->create_publisher<sensor_msgs::msg::Image>("/vision/debug_edges", 10);
 }
 
 // =================================================================================================
@@ -311,52 +311,58 @@ void VisionNode::ColorCallback(const sensor_msgs::msg::Image::ConstSharedPtr &ms
     // ==========================================================
     // --- [K1DIY FEATURE] 5-SECOND DUAL VIDEO RECORDER ---
     // ==========================================================
-    cv::Mat color = synced_data.color_data.data;
-    cv::Mat depth = synced_data.depth_data.data;
+    if (is_recording_) {
+        cv::Mat color = synced_data.color_data.data;
+        cv::Mat depth = synced_data.depth_data.data;
 
-    // Safety check: if DataSyncer didn't find a match yet, skip processing
-    if (color.empty()) return;
+        // Safety check: if DataSyncer didn't find a match yet, skip processing
+        if (color.empty() || depth.empty()) return;
 
-    // Basic Image Processing (Edge Detection)
-    cv::Mat gray, edges;
-    cv::cvtColor(color, gray, cv::COLOR_BGR2GRAY);
-    cv::Canny(gray, edges, 50, 150);
+        // Basic Image Processing (Edge Detection)
+        // cv::Mat gray, edges, edges_bgr;
+        // cv::cvtColor(color, gray, cv::COLOR_BGR2GRAY);
+        // cv::Canny(gray, edges, 50, 150);
+        // cv::cvtColor(edges, edges_bgr, cv::COLOR_GRAY2BGR);
 
-    if (is_recording_ && !color.empty() && !depth.empty()) {
-        cv::Mat gray, edges, edges_bgr, depth_8u, depth_color;
+        cv::Mat depth_color;
+        if (!depth.empty()) {
+            // Convert 16-bit/32-bit depth to an 8-bit color map for video
+            cv::Mat depth_8u;
+            cv::normalize(depth, depth_8u, 0, 255, cv::NORM_MINMAX, CV_8U);
+            cv::applyColorMap(depth_8u, depth_color, cv::COLORMAP_JET);
+        }
         
-        cv::cvtColor(color, gray, cv::COLOR_BGR2GRAY);
-        cv::Canny(gray, edges, 50, 150);
-        cv::cvtColor(edges, edges_bgr, cv::COLOR_GRAY2BGR);
-
-        // Convert 16-bit/32-bit depth to an 8-bit color map for video
-        cv::normalize(depth, depth_8u, 0, 255, cv::NORM_MINMAX, CV_8U);
-        cv::applyColorMap(depth_8u, depth_color, cv::COLORMAP_JET);
-
-        if (!writers_initialized_) {
+        std::string save_path = "data/test/";
+        if (writers_initialized_) {
             int codec = cv::VideoWriter::fourcc('M', 'J', 'P', 'G');
-            std::string save_path = "data/test/";
             std::filesystem::create_directories(save_path);
             
             raw_writer_.open(save_path + "raw_video.avi", codec, 30.0, color.size(), true);
-            edge_writer_.open(save_path + "edge_video.avi", codec, 30.0, edges_bgr.size(), true); 
             depth_writer_.open(save_path + "depth_video.avi", codec, 30.0, depth_color.size(), true); 
-            
+            // edge_writer_.open(save_path + "edge_video.avi", codec, 30.0, edges_bgr.size(), true); 
+
             start_record_time_ = this->get_clock()->now();
-            writers_initialized_ = true;
             std::cout << ">>> RECORDING 5 SECONDS OF VIDEO TO " << save_path << " <<<" << std::endl;
+            writers_initialized_ = false;
         }
+
 
         auto elapsed = this->get_clock()->now() - start_record_time_;
         if (elapsed.seconds() <= 5.0) {
             raw_writer_.write(color);
-            edge_writer_.write(edges_bgr);
             depth_writer_.write(depth_color);
+            // edge_writer_.write(edges_bgr);
+            if (!depth_color.empty() && depth_writer_.isOpened()) {
+                depth_writer_.write(depth_color);
+            }
         } else {
-            std::cout << ">>> FINISHED RECORDING! Videos saved to K1DIY/data/test/ <<<" << std::endl;
+            std::cout << ">>> FINISHED RECORDING! Videos saved to " << save_path << " <<<" << std::endl;
             raw_writer_.release();
-            edge_writer_.release();
             depth_writer_.release();
+            // edge_writer_.release();
+            if (depth_writer_.isOpened()) {
+                depth_writer_.release();
+            }
             is_recording_ = false;
         }
     }
