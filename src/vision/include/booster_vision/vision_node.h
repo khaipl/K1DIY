@@ -57,11 +57,6 @@ public:
     void ProcessSegmentationData(SyncedDataBlock &synced_data, vision_interface::msg::LineSegments &field_line_segs_msg);
 
 private:
-    bool use_depth_ = false;
-    bool show_det_ = false;
-    bool show_seg_ = false;
-    bool save_data_ = false;
-    bool save_depth_ = false;
     bool offline_mode_ = false;
     std::string detection_model_path;
     std::string segmentation_model_path;
@@ -141,6 +136,8 @@ private:
     rclcpp::Time start_record_time_;
     bool writers_initialized_ = true;
     bool is_recording_ = false;
+    bool show_det_ = false; // Set to 'true' to enable the OpenCV detection visualizer window
+    bool show_seg_ = false; // Set to 'true' to enable the OpenCV segmentation visualizer window
 };
 
 } // namespace booster_vision

@@ -16,12 +16,9 @@
 │   └── test
 │       ├── depth_video.avi
 │       ├── depth_video.mp4
-│       ├── edge_video.avi
-│       ├── edge_video.mp4
-│       ├── img1.jpg
 │       ├── raw_video.avi
 │       └── raw_video.mp4
-├── K1DIY_structure.txt
+├── DIY_structure.txt
 ├── LICENSE
 ├── README_debug.md
 ├── README.md
@@ -101,6 +98,7 @@
 │       │   └── sim_data_seg_0126.onnx
 │       ├── package.xml
 │       ├── scripts
+│       │   ├── depth_mock.py
 │       │   ├── install_onnxruntime.sh
 │       │   └── model
 │       │       ├── build_engine.sh
@@ -114,7 +112,6 @@
 │       │   │   ├── pointcloud_process.cpp
 │       │   │   └── pose.cpp
 │       │   ├── CMakeLists.txt
-│       │   ├── depth_mock.py
 │       │   ├── img_bridge.cpp
 │       │   ├── main.cpp
 │       │   ├── model
@@ -320,4 +317,4 @@
     │   └── VERSION_NUMBER
     └── onnxruntime-linux-x64-1.23.2.tgz
 
-57 directories, 263 files
+57 directories, 260 files

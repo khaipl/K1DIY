@@ -1,14 +1,3 @@
-// =================================================================================================
-// Note: Please ensure the following variables are declared in your include/booster_vision/vision_node.h:
-// bool is_recording_ = true;
-// bool writers_initialized_ = false;
-// cv::VideoWriter raw_writer_;
-// cv::VideoWriter edge_writer_;
-// cv::VideoWriter depth_writer_;
-// rclcpp::Time start_record_time_;
-// rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr debug_img_pub_;
-// =================================================================================================
-
 #include "booster_vision/vision_node.h"
 
 #include <functional>
@@ -17,6 +6,7 @@
 #include <algorithm>
 
 #include <opencv2/imgproc.hpp> 
+#include <opencv2/highgui.hpp> // Required for cv::imshow
 #include <yaml-cpp/yaml.h>
 #include <cv_bridge/cv_bridge.h>
 
@@ -25,11 +15,13 @@
 #include "booster_vision/base/misc_utils.hpp"
 #include "booster_vision/img_bridge.h"             // Converts ROS images to OpenCV
 #include "booster_vision/model/detector.h"
+#include "booster_vision/model/segmentor.h"        // Added for Field Lines
 #include "booster_vision/pose_estimator/pose_estimator.h"
 
 // [LIB] Custom ROS 2 Messages for the Brain Node
 #include "vision_interface/msg/detected_object.hpp"
 #include "vision_interface/msg/detections.hpp"
+#include "vision_interface/msg/line_segments.hpp"  // Added for Brain Localization
 
 namespace booster_vision {
 // =================================================================================================
@@ -49,7 +41,7 @@ void VisionNode::Init(const std::string &cfg_template_path, const std::string &c
     
     // --- 1. Load Configuration ---
     if (!std::filesystem::exists(cfg_template_path)) {
-        std::cerr << "Error: Configuration template file '" << cfg_path << "' does not exist." << std::endl;
+        std::cerr << "Error: Configuration template file '" << cfg_template_path << "' does not exist." << std::endl;
         return;
     }
 
@@ -92,7 +84,7 @@ void VisionNode::Init(const std::string &cfg_template_path, const std::string &c
             // NOTE: You will need to implement an OnnxDetector class that 
             // satisfies the detector_ interface to use the CPU backend.
         } else {
-            active_model_path = as_or<std::string>(node["detection_model"]["model_path_tensor"], "");
+            active_model_path = as_or<std::string>(node["detection_model"]["model_path_tensorrt"], "");
             std::cout << "Configuring for TensorRT Backend using: " << active_model_path << std::endl;
         }
 
@@ -119,7 +111,24 @@ void VisionNode::Init(const std::string &cfg_template_path, const std::string &c
         }
     }
 
-    // --- 4. Initialize Pose Estimators (2D -> 3D Projection) ---
+    // --- 4. Initialize YOLO Segmentor (Field Lines) ---
+    if (!node["segmentation_model"]) {
+        std::cerr << "Warning: No segmentation model param found." << std::endl;
+    } else {
+        std::string backend = as_or<std::string>(node["segmentation_model"]["backend"], "tensorrt");
+        std::string active_seg_model_path;
+
+        if (backend == "cpu_onnx") {
+            active_seg_model_path = as_or<std::string>(node["segmentation_model"]["model_path_onnx"], "");
+        } else {
+            active_seg_model_path = as_or<std::string>(node["segmentation_model"]["model_path_tensorrt"], "");
+        }
+
+        segmentor_ = YoloV8Segmentor::CreateYoloV8Segmentor(node["segmentation_model"], active_seg_model_path);
+        seg_data_syncer_ = std::make_shared<DataSyncer>(false); // 2D only, no depth needed for lines
+    }
+
+    // --- 5. Initialize Pose Estimators (2D -> 3D Projection) ---
     pose_estimator_ = std::make_shared<PoseEstimator>(intr_);
     pose_estimator_->Init(YAML::Node());
     pose_estimator_map_["default"] = pose_estimator_;
@@ -137,15 +146,10 @@ void VisionNode::Init(const std::string &cfg_template_path, const std::string &c
         pose_estimator_map_["field_marker"]->Init(node["field_marker_pose_estimator"]);
     }
 
-    // --- 5. Setup Synchronization (Replaces message_filters) ---
-    use_depth_ = as_or<bool>(node["camera"]["use_depth"], false);
-    is_recording_ = as_or<bool>(node["camera"]["save_data"], false);
-    data_syncer_ = std::make_shared<DataSyncer>(use_depth_);
+    // --- 6. Setup Synchronization ---
+    data_syncer_ = std::make_shared<DataSyncer>(true);
 
-    // --- 6. ROS 2 Communication Setup ---
-    std::cout << "current camera_type : " << camera_type_ << std::endl;
-    
-    // Dynamically loading camera/depth topics from vision.yaml
+    // --- 7. ROS 2 Communication Setup ---
     std::string color_topic = as_or<std::string>(node["camera"]["camera_topic"], "/booster_camera_bridge/image_left_raw");
     std::string depth_topic = as_or<std::string>(node["camera"]["depth_topic"], "/booster_camera_bridge/StereoNetNode/stereonet_depth");
 
@@ -153,12 +157,27 @@ void VisionNode::Init(const std::string &cfg_template_path, const std::string &c
     std::cout << "Listening to Depth: " << depth_topic << std::endl;
 
     it_ = std::make_shared<image_transport::ImageTransport>(shared_from_this());
+    
+    // Detection topics
     color_sub_ = it_->subscribe(color_topic, 1, std::bind(&VisionNode::ColorCallback, this, std::placeholders::_1));
     depth_sub_ = it_->subscribe(depth_topic, 1, std::bind(&VisionNode::DepthCallback, this, std::placeholders::_1));
     pose_sub_ = this->create_subscription<geometry_msgs::msg::Pose>("/head_pose", 10, std::bind(&VisionNode::PoseCallBack, this, std::placeholders::_1));
 
     // Publisher for rqt_image_view (Debugging)
     detection_pub_ = this->create_publisher<vision_interface::msg::Detections>("/booster_soccer/detection", rclcpp::QoS(1));
+    detection_img_pub_ = this->create_publisher<sensor_msgs::msg::Image>("/booster_soccer/debug_det_img", rclcpp::QoS(1));
+
+    // Segmentation topics
+    if (segmentor_) {
+        color_seg_sub_ = it_->subscribe(color_topic, 1, std::bind(&VisionNode::SegmentationCallback, this, std::placeholders::_1));
+        field_line_pub_ = this->create_publisher<vision_interface::msg::LineSegments>("/booster_soccer/line_segments", rclcpp::QoS(1));
+        segmentation_img_pub_ = this->create_publisher<sensor_msgs::msg::Image>("/booster_soccer/debug_seg_img", rclcpp::QoS(1));
+    }
+
+    /// --- 4. Load custom parameters ---
+    show_det_ = as_or<bool>(node["show_det"], false);
+    show_seg_ = as_or<bool>(node["show_seg"], false);
+    is_recording_ = as_or<bool>(node["is_recording"], false);
 }
 
 // =================================================================================================
@@ -174,7 +193,7 @@ void VisionNode::ProcessData(SyncedDataBlock &synced_data, vision_interface::msg
     // Convert depth for the pose estimator
     cv::Mat depth_float;
     if (!depth.empty() && depth.depth() == CV_16U) {
-        depth.convertTo(depth_float, CV_32F, 0.001, 0); // Convert mm to meters
+        depth.convertTo(depth_float, CV_32F, 0.001, 0); 
     } else {
         depth_float = depth;
     }
@@ -198,7 +217,7 @@ void VisionNode::ProcessData(SyncedDataBlock &synced_data, vision_interface::msg
         return pose_estimator_map_["default"];
     };
 
-    // 2. Post-processing (Confidence filtering & Single Ball Assumption)
+    // 2. Post-processing
     std::vector<booster_vision::DetectionRes> filtered_detections;
     if (enable_post_process_ && !detections.empty()) {
         for (auto &det : detections) {
@@ -255,7 +274,7 @@ void VisionNode::ProcessData(SyncedDataBlock &synced_data, vision_interface::msg
         detection_msg.detected_objects.push_back(detection_obj);
     }
 
-    // 4. Compute Image Corner Points Position (For field boundary checks in Brain)
+    // 4. Compute Image Corner Points Position
     std::vector<cv::Point2f> corner_uvs = {
         cv::Point2f(0, 0), cv::Point2f(color.cols - 1, 0),
         cv::Point2f(color.cols - 1, color.rows - 1), cv::Point2f(0, color.rows - 1),
@@ -267,8 +286,89 @@ void VisionNode::ProcessData(SyncedDataBlock &synced_data, vision_interface::msg
         detection_msg.corner_pos.push_back(corner_pos.y);
     }
 
+    // ==========================================================
+    // --- [K1DIY FEATURE] LAPTOP WEBCAM DEBUG VISUALIZER ---
+    // ==========================================================
+    // Set this to 'true' ONLY when testing on your laptop!
+    if (show_det_) {
+        // Pass the native BGR image directly to save CPU cycles
+        cv::Mat img_out = YoloV8Detector::DrawDetection(color, filtered_detections);
+        
+        std_msgs::msg::Header header;
+        header.stamp = this->get_clock()->now();
+        sensor_msgs::msg::Image::SharedPtr debug_msg = cv_bridge::CvImage(header, "bgr8", img_out).toImageMsg();
+        if (detection_img_pub_) {
+            detection_img_pub_->publish(*debug_msg);
+        }
+    }
+
     // 5. Publish to ROS 2 Topic
     detection_pub_->publish(detection_msg);
+}
+
+// =================================================================================================
+// [FUNCTION] ProcessSegmentationData
+// Role: Runs Seg inference and fits field line segments for the locator (Brain node).
+// =================================================================================================
+void VisionNode::ProcessSegmentationData(SyncedDataBlock &synced_data, vision_interface::msg::LineSegments &field_line_segs_msg) {
+    if (!segmentor_) return;
+
+    cv::Mat color = synced_data.color_data.data;
+    Pose p_head2base = synced_data.pose_data.data;
+    Pose p_eye2base = p_head2base * p_headprime2head_ * p_eye2head_;
+
+    // 1. AI Inference
+    auto segmentations = segmentor_->Inference(color);
+    std::vector<FieldLineSegment> field_line_segs;
+
+    // 2. Fit Contours to 3D Field Lines
+    for (auto &seg : segmentations) {
+        int area_threshold = 75; // Minimum contour size
+        auto line_segs = FitFieldLineSegments(p_eye2base, intr_, seg.contour, area_threshold);
+        
+        for (auto line_seg : line_segs) {
+            float inlier_precentage = static_cast<float>(line_seg.inlier_count) / line_seg.contour_2d_points.size();
+            if (inlier_precentage < 0.25) continue;
+
+            // 3D Coordinates (For the Brain/Locator)
+            field_line_segs_msg.coordinates.push_back(line_seg.end_points_3d[0].x);
+            field_line_segs_msg.coordinates.push_back(line_seg.end_points_3d[0].y);
+            field_line_segs_msg.coordinates.push_back(line_seg.end_points_3d[1].x);
+            field_line_segs_msg.coordinates.push_back(line_seg.end_points_3d[1].y);
+
+            // 2D UV Coordinates (For debugging)
+            field_line_segs_msg.coordinates_uv.push_back(line_seg.end_points_2d[0].x);
+            field_line_segs_msg.coordinates_uv.push_back(line_seg.end_points_2d[0].y);
+            field_line_segs_msg.coordinates_uv.push_back(line_seg.end_points_2d[1].x);
+            field_line_segs_msg.coordinates_uv.push_back(line_seg.end_points_2d[1].y);
+
+            field_line_segs.push_back(line_seg);
+        }
+    }
+
+    // ==========================================================
+    // --- [K1DIY FEATURE] LAPTOP WEBCAM DEBUG VISUALIZER (SEG) ---
+    // ==========================================================
+    if (show_seg_) {
+        // 1. Draw the raw AI segmentation masks (usually green overlay)
+        cv::Mat color_rgb;
+        cv::cvtColor(color, color_rgb, cv::COLOR_BGR2RGB);
+        cv::Mat img_out = YoloV8Segmentor::DrawSegmentation(color_rgb, segmentations);
+        
+        // 2. Draw the mathematically fitted field lines on top (usually red/blue lines)
+        img_out = DrawFieldLineSegments(img_out, field_line_segs);
+        
+        std_msgs::msg::Header header;
+        header.stamp = this->get_clock()->now();
+        sensor_msgs::msg::Image::SharedPtr debug_msg = cv_bridge::CvImage(header, "bgr8", img_out).toImageMsg();
+        
+        if (segmentation_img_pub_) {
+            segmentation_img_pub_->publish(*debug_msg);
+        }
+    }
+
+    // 3. Publish
+    field_line_pub_->publish(field_line_segs_msg);
 }
 
 // =================================================================================================
@@ -276,10 +376,7 @@ void VisionNode::ProcessData(SyncedDataBlock &synced_data, vision_interface::msg
 // Role: Retrieves synchronized frames and passes them to ProcessData.
 // =================================================================================================
 void VisionNode::ColorCallback(const sensor_msgs::msg::Image::ConstSharedPtr &msg) {
-    if (!msg) {
-        std::cerr << "empty image message." << std::endl;
-        return;
-    }
+    if (!msg) return;
 
     // 1. Convert ROS Image Message -> OpenCV Matrix
     cv::Mat img;
@@ -346,7 +443,6 @@ void VisionNode::ColorCallback(const sensor_msgs::msg::Image::ConstSharedPtr &ms
             writers_initialized_ = false;
         }
 
-
         auto elapsed = this->get_clock()->now() - start_record_time_;
         if (elapsed.seconds() <= 5.0) {
             raw_writer_.write(color);
@@ -359,17 +455,38 @@ void VisionNode::ColorCallback(const sensor_msgs::msg::Image::ConstSharedPtr &ms
             std::cout << ">>> FINISHED RECORDING! Videos saved to " << save_path << " <<<" << std::endl;
             raw_writer_.release();
             depth_writer_.release();
-            // edge_writer_.release();
-            if (depth_writer_.isOpened()) {
-                depth_writer_.release();
-            }
+            if (depth_writer_.isOpened()) depth_writer_.release();
             is_recording_ = false;
         }
     }
+}
 
-    // Optional: Visual Debugging over ROS
-    // cv::Mat debug_img = YoloV8Detector::DrawDetection(img, ...); 
-    // Publish to debug_img_pub_ here if needed.
+// =================================================================================================
+// [FUNCTION] SegmentationCallback
+// =================================================================================================
+void VisionNode::SegmentationCallback(const sensor_msgs::msg::Image::ConstSharedPtr &msg) {
+    if (!msg || !segmentor_) return;
+
+    cv::Mat img;
+    try {
+        img = toCVMat(*msg).clone();
+    } catch (std::exception &e) {
+        std::cerr << "cv_bridge exception: " << e.what() << std::endl;
+        return;
+    }
+
+    if (msg->encoding == "rgb8") {
+        cv::cvtColor(img, img, cv::COLOR_RGB2BGR);
+    }
+
+    vision_interface::msg::LineSegments field_line_segs_msg;
+    field_line_segs_msg.header = msg->header;
+    double timestamp = msg->header.stamp.sec + static_cast<double>(msg->header.stamp.nanosec) * 1e-9;
+
+    SyncedDataBlock synced_data = seg_data_syncer_->getSyncedDataBlock(ColorDataBlock(img, timestamp));
+    
+    if (synced_data.color_data.data.empty()) return;
+    ProcessSegmentationData(synced_data, field_line_segs_msg);
 }
 
 // =================================================================================================
@@ -389,6 +506,7 @@ void VisionNode::DepthCallback(const sensor_msgs::msg::Image::ConstSharedPtr &ms
 
     double timestamp = msg->header.stamp.sec + static_cast<double>(msg->header.stamp.nanosec) * 1e-9;
     data_syncer_->AddDepth(DepthDataBlock(img, timestamp));
+    // Note: seg_data_syncer_ intentionally does not receive depth since lines are 2D projected.
 }
 
 // =================================================================================================
@@ -401,7 +519,13 @@ void VisionNode::PoseCallBack(const geometry_msgs::msg::Pose::SharedPtr msg) {
 
     auto pose = Pose(msg->position.x, msg->position.y, msg->position.z, 
                      msg->orientation.x, msg->orientation.y, msg->orientation.z, msg->orientation.w);
+                     
     data_syncer_->AddPose(PoseDataBlock(pose, timestamp));
+    
+    // Crucial: The Segmentor also needs the robot's pose to project lines to the 3D ground plane
+    if (seg_data_syncer_) {
+        seg_data_syncer_->AddPose(PoseDataBlock(pose, timestamp));
+    }
 }
 
 } // namespace booster_vision

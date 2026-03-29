@@ -197,8 +197,8 @@ std::vector<booster_vision::SegmentationRes> YoloV8SegmentorONNX::InferenceImpl(
     auto output_tensors = session_->Run(options_, input_node_names_.data(), &input_tensor, 1, 
                                         output_node_names_.data(), output_node_names_.size());
     auto end = std::chrono::high_resolution_clock::now();
-    std::cout << "segmentation inference takes: " 
-              << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() << "ms" << std::endl;
+    // std::cout << "segmentation inference takes: " 
+    //           << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() << "ms" << std::endl;
 
     start = std::chrono::high_resolution_clock::now();
     
@@ -381,8 +381,8 @@ std::vector<booster_vision::SegmentationRes> YoloV8SegmentorONNX::InferenceImpl(
     }
     
     end = std::chrono::high_resolution_clock::now();
-    std::cout << "segmentation post process takes: " 
-              << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() << "ms" << std::endl;
+    // std::cout << "segmentation post process takes: " 
+    //           << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() << "ms" << std::endl;
     
     return results;
 }

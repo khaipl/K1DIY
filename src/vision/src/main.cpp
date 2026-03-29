@@ -19,7 +19,6 @@ int main(int argc, char **argv) {
     node->Init(config_path, config_path);
 
     // 4. Keep the node running and listening to the camera streams
-    std::cout << ">>> K1DIY Perception Node is running! Waiting for camera topics... <<<" << std::endl;
     rclcpp::spin(node);
 
     // 5. Clean shutdown when you press Ctrl+C
