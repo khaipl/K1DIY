@@ -57,6 +57,7 @@ public:
     void ProcessSegmentationData(SyncedDataBlock &synced_data, vision_interface::msg::LineSegments &field_line_segs_msg);
 
 private:
+    void RecordDebugVideo(cv::VideoWriter& writer, const cv::Mat& frame, const std::string& filename, const std::string& log_name, double fps);
     bool offline_mode_ = false;
     std::string detection_model_path;
     std::string segmentation_model_path;
@@ -131,10 +132,9 @@ private:
     // ==========================================================
     std::string camera_type_;
     cv::VideoWriter raw_writer_;
-    cv::VideoWriter edge_writer_;
     cv::VideoWriter depth_writer_;
     rclcpp::Time start_record_time_;
-    bool writers_initialized_ = true;
+
     bool is_recording_ = false;
     bool show_det_ = false; // Set to 'true' to enable the OpenCV detection visualizer window
     bool show_seg_ = false; // Set to 'true' to enable the OpenCV segmentation visualizer window

@@ -149,7 +149,12 @@ void VisionNode::Init(const std::string &cfg_template_path, const std::string &c
     // --- 6. Setup Synchronization ---
     data_syncer_ = std::make_shared<DataSyncer>(true);
 
-    // --- 7. ROS 2 Communication Setup ---
+    /// --- 7. Load custom parameters ---
+    show_det_ = as_or<bool>(node["show_det"], false);
+    show_seg_ = as_or<bool>(node["show_seg"], false);
+    is_recording_ = as_or<bool>(node["is_recording"], false);
+
+    // --- 8. ROS 2 Communication Setup ---
     std::string color_topic = as_or<std::string>(node["camera"]["camera_topic"], "/booster_camera_bridge/image_left_raw");
     std::string depth_topic = as_or<std::string>(node["camera"]["depth_topic"], "/booster_camera_bridge/StereoNetNode/stereonet_depth");
 
@@ -165,19 +170,18 @@ void VisionNode::Init(const std::string &cfg_template_path, const std::string &c
 
     // Publisher for rqt_image_view (Debugging)
     detection_pub_ = this->create_publisher<vision_interface::msg::Detections>("/booster_soccer/detection", rclcpp::QoS(1));
-    detection_img_pub_ = this->create_publisher<sensor_msgs::msg::Image>("/booster_soccer/debug_det_img", rclcpp::QoS(1));
+    if (show_det_) {
+        detection_img_pub_ = this->create_publisher<sensor_msgs::msg::Image>("/booster_soccer/debug_det_img", rclcpp::QoS(1));
+    }
 
     // Segmentation topics
     if (segmentor_) {
         color_seg_sub_ = it_->subscribe(color_topic, 1, std::bind(&VisionNode::SegmentationCallback, this, std::placeholders::_1));
         field_line_pub_ = this->create_publisher<vision_interface::msg::LineSegments>("/booster_soccer/line_segments", rclcpp::QoS(1));
-        segmentation_img_pub_ = this->create_publisher<sensor_msgs::msg::Image>("/booster_soccer/debug_seg_img", rclcpp::QoS(1));
+        if (show_seg_) {
+            segmentation_img_pub_ = this->create_publisher<sensor_msgs::msg::Image>("/booster_soccer/debug_seg_img", rclcpp::QoS(1));
+        }
     }
-
-    /// --- 4. Load custom parameters ---
-    show_det_ = as_or<bool>(node["show_det"], false);
-    show_seg_ = as_or<bool>(node["show_seg"], false);
-    is_recording_ = as_or<bool>(node["is_recording"], false);
 }
 
 // =================================================================================================
@@ -287,19 +291,27 @@ void VisionNode::ProcessData(SyncedDataBlock &synced_data, vision_interface::msg
     }
 
     // ==========================================================
-    // --- [K1DIY FEATURE] LAPTOP WEBCAM DEBUG VISUALIZER ---
+    // --- [K1DIY FEATURE] DEBUG VISUALIZER & VIDEO RECORDER ---
     // ==========================================================
-    // Set this to 'true' ONLY when testing on your laptop!
+    cv::Mat det_img_out;
+    if (show_det_ || is_recording_) {
+        det_img_out = YoloV8Detector::DrawDetection(color, filtered_detections);
+    }
+
     if (show_det_) {
-        // Pass the native BGR image directly to save CPU cycles
-        cv::Mat img_out = YoloV8Detector::DrawDetection(color, filtered_detections);
-        
         std_msgs::msg::Header header;
         header.stamp = this->get_clock()->now();
-        sensor_msgs::msg::Image::SharedPtr debug_msg = cv_bridge::CvImage(header, "bgr8", img_out).toImageMsg();
+        sensor_msgs::msg::Image::SharedPtr debug_msg = cv_bridge::CvImage(header, "bgr8", det_img_out).toImageMsg();
         if (detection_img_pub_) {
             detection_img_pub_->publish(*debug_msg);
         }
+    }
+
+    // Save 10s video
+    if (is_recording_) {
+        RecordDebugVideo(raw_writer_, det_img_out, "ai_detection_video.avi", "DETECTIONS",10.0);
+    } else if (raw_writer_.isOpened()) {
+        raw_writer_.release();
     }
 
     // 5. Publish to ROS 2 Topic
@@ -347,24 +359,31 @@ void VisionNode::ProcessSegmentationData(SyncedDataBlock &synced_data, vision_in
     }
 
     // ==========================================================
-    // --- [K1DIY FEATURE] LAPTOP WEBCAM DEBUG VISUALIZER (SEG) ---
+    // --- [K1DIY FEATURE] DEBUG VISUALIZER & VIDEO RECORDER ---
     // ==========================================================
+    cv::Mat seg_img_out;
+    if (show_seg_ || is_recording_) {
+        seg_img_out = YoloV8Segmentor::DrawSegmentation(color, segmentations);
+        seg_img_out = DrawFieldLineSegments(seg_img_out, field_line_segs);
+        
+        // Convert BACK to BGR
+        cv::cvtColor(seg_img_out, seg_img_out, cv::COLOR_RGB2BGR);
+    }
+
     if (show_seg_) {
-        // 1. Draw the raw AI segmentation masks (usually green overlay)
-        cv::Mat color_rgb;
-        cv::cvtColor(color, color_rgb, cv::COLOR_BGR2RGB);
-        cv::Mat img_out = YoloV8Segmentor::DrawSegmentation(color_rgb, segmentations);
-        
-        // 2. Draw the mathematically fitted field lines on top (usually red/blue lines)
-        img_out = DrawFieldLineSegments(img_out, field_line_segs);
-        
         std_msgs::msg::Header header;
         header.stamp = this->get_clock()->now();
-        sensor_msgs::msg::Image::SharedPtr debug_msg = cv_bridge::CvImage(header, "bgr8", img_out).toImageMsg();
-        
+        sensor_msgs::msg::Image::SharedPtr debug_msg = cv_bridge::CvImage(header, "bgr8", seg_img_out).toImageMsg();
         if (segmentation_img_pub_) {
             segmentation_img_pub_->publish(*debug_msg);
         }
+    }
+
+    // Cleaned up video call!
+    if (is_recording_) {
+        RecordDebugVideo(depth_writer_, seg_img_out, "ai_segmentation_video.avi", "SEGMENTATION",6.0);
+    } else if (depth_writer_.isOpened()) {
+        depth_writer_.release();
     }
 
     // 3. Publish
@@ -403,62 +422,8 @@ void VisionNode::ColorCallback(const sensor_msgs::msg::Image::ConstSharedPtr &ms
     vision_interface::msg::Detections detection_msg;
     detection_msg.header = msg->header;
     
+    // Video writing now happens *inside* ProcessData so we get the AI output!
     ProcessData(synced_data, detection_msg);
-
-    // ==========================================================
-    // --- [K1DIY FEATURE] 5-SECOND DUAL VIDEO RECORDER ---
-    // ==========================================================
-    if (is_recording_) {
-        cv::Mat color = synced_data.color_data.data;
-        cv::Mat depth = synced_data.depth_data.data;
-
-        // Safety check: if DataSyncer didn't find a match yet, skip processing
-        if (color.empty() || depth.empty()) return;
-
-        // Basic Image Processing (Edge Detection)
-        // cv::Mat gray, edges, edges_bgr;
-        // cv::cvtColor(color, gray, cv::COLOR_BGR2GRAY);
-        // cv::Canny(gray, edges, 50, 150);
-        // cv::cvtColor(edges, edges_bgr, cv::COLOR_GRAY2BGR);
-
-        cv::Mat depth_color;
-        if (!depth.empty()) {
-            // Convert 16-bit/32-bit depth to an 8-bit color map for video
-            cv::Mat depth_8u;
-            cv::normalize(depth, depth_8u, 0, 255, cv::NORM_MINMAX, CV_8U);
-            cv::applyColorMap(depth_8u, depth_color, cv::COLORMAP_JET);
-        }
-        
-        std::string save_path = "data/test/";
-        if (writers_initialized_) {
-            int codec = cv::VideoWriter::fourcc('M', 'J', 'P', 'G');
-            std::filesystem::create_directories(save_path);
-            
-            raw_writer_.open(save_path + "raw_video.avi", codec, 30.0, color.size(), true);
-            depth_writer_.open(save_path + "depth_video.avi", codec, 30.0, depth_color.size(), true); 
-            // edge_writer_.open(save_path + "edge_video.avi", codec, 30.0, edges_bgr.size(), true); 
-
-            start_record_time_ = this->get_clock()->now();
-            std::cout << ">>> RECORDING 5 SECONDS OF VIDEO TO " << save_path << " <<<" << std::endl;
-            writers_initialized_ = false;
-        }
-
-        auto elapsed = this->get_clock()->now() - start_record_time_;
-        if (elapsed.seconds() <= 5.0) {
-            raw_writer_.write(color);
-            depth_writer_.write(depth_color);
-            // edge_writer_.write(edges_bgr);
-            if (!depth_color.empty() && depth_writer_.isOpened()) {
-                depth_writer_.write(depth_color);
-            }
-        } else {
-            std::cout << ">>> FINISHED RECORDING! Videos saved to " << save_path << " <<<" << std::endl;
-            raw_writer_.release();
-            depth_writer_.release();
-            if (depth_writer_.isOpened()) depth_writer_.release();
-            is_recording_ = false;
-        }
-    }
 }
 
 // =================================================================================================
@@ -486,6 +451,8 @@ void VisionNode::SegmentationCallback(const sensor_msgs::msg::Image::ConstShared
     SyncedDataBlock synced_data = seg_data_syncer_->getSyncedDataBlock(ColorDataBlock(img, timestamp));
     
     if (synced_data.color_data.data.empty()) return;
+    
+    // Video writing now happens *inside* ProcessSegmentationData so we get the AI output!
     ProcessSegmentationData(synced_data, field_line_segs_msg);
 }
 
@@ -525,6 +492,49 @@ void VisionNode::PoseCallBack(const geometry_msgs::msg::Pose::SharedPtr msg) {
     // Crucial: The Segmentor also needs the robot's pose to project lines to the 3D ground plane
     if (seg_data_syncer_) {
         seg_data_syncer_->AddPose(PoseDataBlock(pose, timestamp));
+    }
+}
+
+// =================================================================================================
+// [FUNCTION] RecordDebugVideo
+// Role: Handles directory creation, codec setup, and the 5-second shared timer for video logging.
+// =================================================================================================
+void VisionNode::RecordDebugVideo(cv::VideoWriter& writer, const cv::Mat& frame, const std::string& filename, const std::string& log_name, double fps) {
+    if (frame.empty()) return;
+
+    std::string save_path = "data/test/";
+
+    // 1. Initialize the writer
+    if (!writer.isOpened()) {
+        int codec = cv::VideoWriter::fourcc('M', 'J', 'P', 'G');
+        std::filesystem::create_directories(save_path);
+        
+        // Use the custom FPS passed into the function!
+        writer.open(save_path + filename, codec, fps, frame.size(), true);
+        
+        if (start_record_time_.nanoseconds() == 0) {
+            start_record_time_ = this->get_clock()->now();
+            std::cout << ">>> RECORDING 10 SECONDS OF AI DATA TO " << save_path << " <<<" << std::endl;
+        }
+    }
+
+    // 2. Check elapsed time
+    auto elapsed = this->get_clock()->now() - start_record_time_;
+    
+    // 3. Write or Cleanup
+    if (elapsed.seconds() <= 10.0) {
+        writer.write(frame);
+    } else {
+        if (writer.isOpened()) {
+            std::cout << ">>> FINISHED RECORDING " << log_name << "! <<<" << std::endl;
+            writer.release();
+        }
+        
+        // K1DIY FIX: Only shut off the master switch if BOTH writers are successfully closed
+        if (!raw_writer_.isOpened() && !depth_writer_.isOpened()) {
+            is_recording_ = false; 
+            start_record_time_ = rclcpp::Time(0, 0, this->get_clock()->get_clock_type());
+        }
     }
 }
 
