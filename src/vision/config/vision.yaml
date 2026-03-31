@@ -1,7 +1,7 @@
 # ==========================================
 # --- CUSTOM PARAMETERS ---
 # ==========================================
-is_recording: true # Set to 'true' to enable recording of camera data and model outputs for offline analysis
+is_recording: false # Set to 'true' to enable recording of camera data and model outputs for offline analysis
 show_det: false # Set to 'true' while debugging
 show_seg: false # Set to 'true' while debugging
 
@@ -9,7 +9,7 @@ show_seg: false # Set to 'true' while debugging
 # --- CORE HARDWARE & CAMERA CONFIG ---
 # ==========================================
 camera:
-  type: "d-robotics" # Options: "d-robotics" for real or "laptop" for testing
+  type: "laptop" # Options: "d-robotics" for real or "laptop" for testing
   camera_topic: "/booster_camera_bridge/image_left_raw" 
   depth_topic: "/booster_camera_bridge/StereoNetNode/stereonet_depth" 
   intrin: 

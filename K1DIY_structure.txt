@@ -14,11 +14,13 @@
 ├── configs
 ├── data
 │   └── test
+│       ├── ai_detection_video.avi
+│       ├── ai_segmentation_video.avi
 │       ├── depth_video.avi
 │       ├── depth_video.mp4
 │       ├── raw_video.avi
 │       └── raw_video.mp4
-├── DIY_structure.txt
+├── K1DIY_structure.txt
 ├── LICENSE
 ├── README_debug.md
 ├── README.md
@@ -26,6 +28,10 @@
 │   └── build.sh
 ├── src
 │   ├── brain
+│   │   ├── CMakeLists.txt
+│   │   ├── package.xml
+│   │   └── src
+│   │       └── brain_node.cpp
 │   ├── interface
 │   │   └── vision_interface
 │   │       ├── CMakeLists.txt
@@ -317,4 +323,4 @@
     │   └── VERSION_NUMBER
     └── onnxruntime-linux-x64-1.23.2.tgz
 
-57 directories, 260 files
+58 directories, 265 files

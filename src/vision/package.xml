@@ -3,9 +3,9 @@
 <package format="3">
   <name>vision</name>
   <version>0.1.0</version>
-  <description>Modular Perception Node for K1DIY using NaovaK1 architecture (DataSyncer &amp; Base Math)</description>
+  <description>Vision node for K1DIY based on NaovaK1</description>
   <maintainer email="le-khai.pham.1@ens.etsmtl.ca">Khai Pham</maintainer>
-  <license>Apache-2.0</license>
+  <license>MIT</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 

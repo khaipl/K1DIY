@@ -204,6 +204,13 @@ void VisionNode::ProcessData(SyncedDataBlock &synced_data, vision_interface::msg
 
     // Kinematic chain: Head to Base -> Eye to Base
     Pose p_head2base = synced_data.pose_data.data;
+    
+    // [K1DIY] Laptop Debugging Override: Provide a mock height so 2D->3D projection doesn't fail
+    if (camera_type_ == "laptop") {
+        // Mock pose: x=0, y=0, z=0.5m (height), roll=0, pitch=0.2 rad (looking slightly down), yaw=0
+        p_head2base = Pose(0.0, 0.0, 0.5, 0.0, 0.2, 0.0);
+    }
+
     Pose p_eye2base = p_head2base * p_headprime2head_ * p_eye2head_;
 
     // 1. AI Inference
@@ -309,7 +316,7 @@ void VisionNode::ProcessData(SyncedDataBlock &synced_data, vision_interface::msg
 
     // Save 10s video
     if (is_recording_) {
-        RecordDebugVideo(raw_writer_, det_img_out, "ai_detection_video.avi", "DETECTIONS",10.0);
+        RecordDebugVideo(raw_writer_, det_img_out, "det_video.avi", "DETECTIONS",10.0);
     } else if (raw_writer_.isOpened()) {
         raw_writer_.release();
     }
@@ -327,6 +334,12 @@ void VisionNode::ProcessSegmentationData(SyncedDataBlock &synced_data, vision_in
 
     cv::Mat color = synced_data.color_data.data;
     Pose p_head2base = synced_data.pose_data.data;
+
+    // [K1DIY] Laptop Debugging Override
+    if (camera_type_ == "laptop") {
+        p_head2base = Pose(0.0, 0.0, 0.5, 0.0, 0.2, 0.0);
+    }
+
     Pose p_eye2base = p_head2base * p_headprime2head_ * p_eye2head_;
 
     // 1. AI Inference
@@ -381,7 +394,7 @@ void VisionNode::ProcessSegmentationData(SyncedDataBlock &synced_data, vision_in
 
     // Cleaned up video call!
     if (is_recording_) {
-        RecordDebugVideo(depth_writer_, seg_img_out, "ai_segmentation_video.avi", "SEGMENTATION",6.0);
+        RecordDebugVideo(depth_writer_, seg_img_out, "seg_video.avi", "SEGMENTATION",6.0);
     } else if (depth_writer_.isOpened()) {
         depth_writer_.release();
     }
