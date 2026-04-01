@@ -35,7 +35,7 @@ detection_model:
   backend: "cpu_onnx" # Options: "cpu_onnx" or "tensorrt"
   model_path_onnx: "./src/vision/model/sim_data_det_0126.onnx" 
   model_path_tensorrt: "./src/vision/model/best_digua_10.3.engine"
-  confidence_threshold: 0.2
+  confidence_threshold: 0.85
   nms_threshold: 0.4
   classnames: [Ball, Goalpost, Person, LCross, TCross, XCross, PenaltyPoint, Opponent, BRMarker]
   post_process:
