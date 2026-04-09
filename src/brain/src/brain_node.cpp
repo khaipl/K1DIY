@@ -13,6 +13,11 @@
 #include "message_utils.hpp"
 #include "third_party/nlohmann_json/json.hpp" 
 
+// Ensure M_PI is defined
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 using std::placeholders::_1;
 using namespace std::chrono_literals;
 
@@ -25,7 +30,7 @@ public:
         std::string robot_name = this->get_parameter("robot_name").as_string();
         std::string topic_suffix = robot_name.empty() ? "" : "/" + robot_name;
 
-        RCLCPP_INFO(this->get_logger(), "Starting K1DIY Brain Node (CHASE MODE)...");
+        RCLCPP_INFO(this->get_logger(), "Starting K1DIY Brain Node (CHASE + HEAD TRACKING MODE)...");
 
         // 1. Setup the Vision Subscriber (The Eyes)
         std::string vision_topic = "/booster_soccer/detection" + topic_suffix;
@@ -33,15 +38,23 @@ public:
             vision_topic, 10, std::bind(&MinimalBrain::vision_callback, this, _1));
 
         // 2. Setup the Locomotion Publisher (The Muscles)
-        std::string loco_topic = "LocoApiTopic" + topic_suffix + "Req";
+        std::string loco_topic = "/LocoApiTopic" + topic_suffix + "Req";
         loco_pub_ = this->create_publisher<booster_msgs::msg::RpcReqMsg>(loco_topic, 10);
         
-        // 3. Setup the Control Loop Timer (4 times a second!)
+        // 3. Setup the Control Loop Timer (4 times a second)
         timer_ = this->create_wall_timer(
-            250ms, std::bind(&MinimalBrain::control_loop, this)); 
+            50ms, std::bind(&MinimalBrain::control_loop, this)); 
     }
 
 private:
+    enum class BrainState {
+        STARTUP,
+        PREPARING,
+        WALKING
+    };
+    BrainState current_state_ = BrainState::STARTUP;
+    rclcpp::Time state_change_time_;
+
     struct BallData {
         bool detected = false;
         double x_to_robot = 0.0;
@@ -102,9 +115,32 @@ private:
         return 0;
     }
 
+    int setHeadPosition(float target_pitch, float target_yaw) {
+        // 1. Define hardware limits based on the K1 Joint Table (in degrees)
+        float max_pitch_deg = 38.0f;
+        float min_pitch_deg = -12.0f;
+        
+        float max_yaw_deg = 50.0f;
+        float min_yaw_deg = -50.0f;
+
+        // 2. Convert degrees to radians (API expects radians)
+        float max_pitch = max_pitch_deg * M_PI / 180.0f; // ~ 0.750 rad
+        float min_pitch = min_pitch_deg * M_PI / 180.0f; // ~ -0.297 rad
+        
+        float max_yaw = max_yaw_deg * M_PI / 180.0f;     // ~ 1.030 rad
+        float min_yaw = min_yaw_deg * M_PI / 180.0f;     // ~ -1.030 rad
+
+        // 3. Cap the requested angles to strictly prevent hardware damage
+        float safe_pitch = cap(target_pitch, max_pitch, min_pitch);
+        float safe_yaw = cap(target_yaw, max_yaw, min_yaw);
+
+        // 4. Send the RPC request to the robot
+        return call(booster_interface::CreateRotateHeadMsg(safe_pitch, safe_yaw));
+    }
+
     int setVelocity(double x, double y, double theta) {
-        double minx = 0.3, miny = 0.3, mintheta = 0.25;
-        double vx_limit = 1.0, vy_limit = 0.4, vtheta_limit = 1.2;
+        double minx = 0.3, miny = 0.1, mintheta = 0.1;
+        double vx_limit = 0.5, vy_limit = 0.2, vtheta_limit = 0.3;
 
         if (fabs(x) < minx && fabs(x) > 1e-5) x = (x > 0) ? minx : -minx;
         if (fabs(y) < miny && fabs(y) > 1e-5) y = (y > 0) ? miny : -miny;
@@ -118,27 +154,69 @@ private:
     }
 
     // =============================================================
-    // THE NEW INTELLIGENCE: The Chase Loop
+    // THE NEW INTELLIGENCE: The Chase Loop with Head Tracking
     // =============================================================
     void control_loop() {
-        if (current_ball_.detected) {
-            // Proportional Control Gains
-            double Kp_x = 0.8;      
-            double Kp_theta = 1.2;  
+        auto now = this->get_clock()->now();
 
-            double target_distance = 0.3; 
+        switch (current_state_) {
+            case BrainState::STARTUP:
+                RCLCPP_INFO(this->get_logger(), "Sending kPrepare mode...");
+                call(booster_interface::CreateChangeModeMsg(booster::robot::RobotMode::kPrepare));
+                current_state_ = BrainState::PREPARING;
+                state_change_time_ = now;
+                break;
 
-            // Calculate speeds based on the ball's coordinates
-            double vx = Kp_x * (current_ball_.x_to_robot - target_distance);
-            double vtheta = Kp_theta * current_ball_.yaw_to_robot;
+            case BrainState::PREPARING:
+                // Give the physical hardware 3 seconds to stand up
+                if ((now - state_change_time_).seconds() > 3.0) {
+                    RCLCPP_INFO(this->get_logger(), "Sending kWalking mode...");
+                    call(booster_interface::CreateChangeModeMsg(booster::robot::RobotMode::kWalking));
+                    current_state_ = BrainState::WALKING;
+                }
+                break;
 
-            RCLCPP_INFO(this->get_logger(), "CHASING | X: %.2fm, Y: %.2fm -> Cmd: vx=%.2f, vtheta=%.2f", 
-                        current_ball_.x_to_robot, current_ball_.y_to_robot, vx, vtheta);
-            
-            setVelocity(vx, 0.0, vtheta);
-        } else {
-            RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "LOST BALL | Freezing motors.");
-            setVelocity(0.0, 0.0, 0.0);
+            case BrainState::WALKING:
+                if (current_ball_.detected) {
+                    // 1. HEAD TRACKING MATH
+                    float camera_height = 0.5; // K1's approximate camera height in meters
+                    
+                    // Calculate the angles required to look exactly at the ball
+                    float target_yaw = current_ball_.yaw_to_robot;
+                    float target_pitch = std::atan2(camera_height, current_ball_.range);
+                    
+                    // Command the head to track the ball (safely capped by hardware limits!)
+                    setHeadPosition(target_pitch, target_yaw);
+
+                    // 2. LOCOMOTION CHASE LOGIC
+                    double Kp_x = 0.0;      
+                    double Kp_theta = 0.0;  
+                    double target_distance = -0.2; 
+
+                    double vx = Kp_x * (current_ball_.x_to_robot - target_distance);
+                    double vtheta = Kp_theta * current_ball_.yaw_to_robot;
+                    
+                    RCLCPP_INFO(this->get_logger(), 
+                        "BALL SEEN | Conf: %05.1f%% | X: %04.2fm | Y: %04.2fm | Range: %04.2fm | Yaw: %04.2frad", 
+                        current_ball_.confidence, 
+                        current_ball_.x_to_robot, 
+                        current_ball_.y_to_robot, 
+                        current_ball_.range, 
+                        current_ball_.yaw_to_robot);
+                    
+                    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 500, 
+                        "BALL SEEN | Range: %04.2fm | Pitch: %04.2frad | Yaw: %04.2frad", 
+                        current_ball_.range, target_pitch, target_yaw);
+                    
+                    setVelocity(vx, 0.0, vtheta); 
+                } else {
+                    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "LOST BALL | Scanning..."); 
+                    
+                    // Search for the ball by looking around (Scan mode)
+                    setHeadPosition(0.3, 0.0); // Look slightly down and straight ahead
+                    setVelocity(0.0, 0.0, 0.0);
+                }
+                break;
         }
     }
 };

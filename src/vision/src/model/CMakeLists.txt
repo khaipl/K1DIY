@@ -2,7 +2,7 @@
 # Only include CUDA/TensorRT when NO_CUDA is OFF
 if(NO_CUDA)
   # Build with ONNX
-  add_subdirectory(onnx)
+  # add_subdirectory(onnx)
 else()
   # Build with CUDA/TensorRT
   if (CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")

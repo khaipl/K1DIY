@@ -46,6 +46,13 @@ source /opt/ros/humble/setup.bash
 ros2 run rqt_image_view rqt_image_view
 ```
 
+Terminal 5: Activate brain node
+```bash
+source install/setup.bash
+ros2 run brain brain_node
+```
+
+
 ## Configuration
 
 Before running, ensure your src/vision/config/vision.yaml is set up for local laptop testing:

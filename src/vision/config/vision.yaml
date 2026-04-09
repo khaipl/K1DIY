@@ -1,7 +1,7 @@
 # ==========================================
 # --- CUSTOM PARAMETERS ---
 # ==========================================
-is_recording: false # Set to 'true' to enable recording of camera data and model outputs for offline analysis
+is_recording: true # Set to 'true' to enable recording of camera data and model outputs for offline analysis
 show_det: false # Set to 'true' while debugging
 show_seg: false # Set to 'true' while debugging
 
@@ -11,7 +11,9 @@ show_seg: false # Set to 'true' while debugging
 camera:
   type: "laptop" # Options: "d-robotics" for real or "laptop" for testing
   camera_topic: "/booster_camera_bridge/image_left_raw" 
-  depth_topic: "/booster_camera_bridge/StereoNetNode/stereonet_depth" 
+  depth_topic:  "/booster_camera_bridge/StereoNetNode/stereonet_depth" 
+  # camera_topic: "/camera/robot0_rgbd_camera/rgb/image_compressed" # sim
+  # depth_topic: "/camera/robot0_rgbd_camera/depth/image_raw" # sim
   intrin: 
     fx: 213.62648
     fy: 213.62648
@@ -62,7 +64,7 @@ segmentation_model:
 # --- POSE ESTIMATION (SIM2REAL LOGIC) ---
 # ==========================================
 ball_pose_estimator:
-  use_depth: false 
+  use_depth: true 
   radius: 0.109
   down_sample_leaf_size: 0.01
   cluster_distance_threshold: 0.01

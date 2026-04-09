@@ -5,7 +5,11 @@ add_subdirectory(pose_estimator)
 
 # If running on the physical robot (ARM64), compile the calibration tools
 if(CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
-  add_subdirectory(calibration)
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/calibration")
+    add_subdirectory(calibration)
+  else()
+    message(WARNING "Calibration directory not found. Skipping calibration tools.")
+  endif()
 endif()
 
 # 2. Build the node (Notice: no more BASE_SOURCES here!)

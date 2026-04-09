@@ -13,27 +13,28 @@ set(CMAKE_CXX_STANDARD 17)
 # ==========================================
 # 1. HARDWARE / PROTOTYPING OPTIONS
 # ==========================================
-# Defaulting to ON for PC prototyping using ONNX instead of Jetson TensorRT
-option(NO_CUDA "Build without CUDA/TensorRT, use ONNX instead" ON)
+# This build is configured to use CUDA and TensorRT for inference.
+message(STATUS "Building with CUDA/TensorRT support.")
+set(USE_TENSORRT ON CACHE INTERNAL "Force using TensorRT for all sub-projects")
 
-if(NO_CUDA)
-  add_definitions(-DNO_CUDA)
-  message(STATUS "Building without CUDA - using ONNX for inference")
-  
-  find_path(ONNXRUNTIME_INCLUDE_DIRS onnxruntime_cxx_api.h
-    HINTS /usr/include/onnxruntime /usr/local/include/onnxruntime /opt/onnxruntime/include
-    PATH_SUFFIXES onnxruntime core/session)
-  
-  find_library(ONNXRUNTIME_LIBRARIES
-    NAMES onnxruntime
-    HINTS /usr/lib /usr/local/lib /opt/onnxruntime/lib)
-  
-  if(ONNXRUNTIME_INCLUDE_DIRS AND ONNXRUNTIME_LIBRARIES)
-    message(STATUS "Found ONNX Runtime: ${ONNXRUNTIME_LIBRARIES}")
-    include_directories(${ONNXRUNTIME_INCLUDE_DIRS})
-  else()
-    message(WARNING "ONNX Runtime not found! You may need to run the install script.")
-  endif()
+find_package(CUDA REQUIRED)
+
+# Find TensorRT
+find_path(TENSORRT_INCLUDE_DIR NvInfer.h
+  HINTS
+    /usr/include/aarch64-linux-gnu
+    /usr/local/cuda/include
+    $ENV{TENSORRT_DIR}/include
+)
+find_library(TENSORRT_LIBRARY nvinfer
+  HINTS
+    /usr/lib/aarch64-linux-gnu
+    /usr/local/cuda/lib64
+    $ENV{TENSORRT_DIR}/lib
+)
+
+if(NOT TENSORRT_INCLUDE_DIR OR NOT TENSORRT_LIBRARY)
+  message(FATAL_ERROR "TensorRT not found. Please ensure it is installed correctly, or that the TENSORRT_DIR environment variable is set.")
 endif()
 
 # ==========================================
@@ -63,8 +64,11 @@ find_package(vision_interface REQUIRED)
 include_directories(
     include
     ${PROJECT_SOURCE_DIR}/thirdparty/include
+    ${TENSORRT_INCLUDE_DIR}
     ${OpenCV_INCLUDE_DIRS}
     ${YAML_CPP_INCLUDE_DIR}
+    ${CUDA_INCLUDE_DIRS}            # <-- ADDED: CMake's detected CUDA path
+    # /usr/local/cuda/include        # <-- ADDED: Common CUDA include path (adjust if your CUDA is installed elsewhere)
 )
 
 # ==========================================
