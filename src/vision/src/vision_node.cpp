@@ -258,6 +258,15 @@ void VisionNode::ProcessData(SyncedDataBlock &synced_data, vision_interface::msg
         vision_interface::msg::DetectedObject detection_obj;
         detection.class_name = detector_->kClassLabels[detection.class_id];
 
+        if (detection.class_name == "Ball") {
+            RCLCPP_INFO(this->get_logger(), "[DEBUG STEP 1: Pixels] Ball BBox -> X:%d Y:%d, W:%d H:%d", 
+                        detection.bbox.x, detection.bbox.y, detection.bbox.width, detection.bbox.height);
+            
+            auto euler = p_eye2base.getEulerAnglesVec();
+            auto trans = p_eye2base.getTranslationVec();
+            RCLCPP_INFO(this->get_logger(), "[DEBUG STEP 2: Camera State] Height(Z): %.3fm, Pitch: %.3frad", trans[2], euler[1]);
+        }
+
         auto pose_estimator = get_estimator(detection.class_name);
         
         // Calculate coordinate using geometry (projection to z=0) and Depth Camera
@@ -267,6 +276,12 @@ void VisionNode::ProcessData(SyncedDataBlock &synced_data, vision_interface::msg
         // Populate ROS Message payload
         detection_obj.position_projection = pose_obj_by_color.getTranslationVec();
         detection_obj.position = pose_obj_by_depth.getTranslationVec();
+
+        if (detection.class_name == "Ball") {
+            RCLCPP_INFO(this->get_logger(), "[DEBUG STEP 3: Projection] 3D World Ball -> X: %.3fm, Y: %.3fm", 
+                        detection_obj.position_projection[0], 
+                        detection_obj.position_projection[1]);
+        }
 
         auto xyz = p_head2base.getTranslationVec();
         auto rpy = p_head2base.getEulerAnglesVec();

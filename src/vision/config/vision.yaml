@@ -1,8 +1,8 @@
 # ==========================================
 # --- CUSTOM PARAMETERS ---
 # ==========================================
-is_recording: true # Set to 'true' to enable recording of camera data and model outputs for offline analysis
-show_det: false # Set to 'true' while debugging
+is_recording: false # Set to 'true' to enable recording of camera data and model outputs for offline analysis
+show_det: true # Set to 'true' while debugging
 show_seg: false # Set to 'true' while debugging
 
 # ==========================================
@@ -15,19 +15,21 @@ camera:
   # camera_topic: "/camera/robot0_rgbd_camera/rgb/image_compressed" # sim
   # depth_topic: "/camera/robot0_rgbd_camera/depth/image_raw" # sim
   intrin: 
-    fx: 213.62648
-    fy: 213.62648
-    cx: 242.839554
-    cy: 223.966568
+    fx: 206.445511`
+    fy: 206.445511`
+    cx: 224.958221
+    cy: 242.717239
     distortion_model: 0
     distortion_coeffs: [0.0, 0.0, 0.0, 0.0, 0.0]
   extrin: 
-    [0.0927495956, 0.00744829793, 0.995661557, -0.00978016853,
-      -0.995669305, 0.00706163328, 0.0926974788, 0.0303872209,
-      -0.00634055864, -0.999947429, 0.00807100441, -0.00966392457,
-      0.0, 0.0, 0.0, 1.0]
-  pitch_compensation: 0.8 
-  yaw_compensation: 1.8
+      # cam(x right y down z forward) -> head(x forward y left z up)
+      - [ 0.0753363073,  0.0190046262,   0.996977091,  -0.0122268423 ]
+      - [-0.99715662,   -0.000328667404, 0.0753561407,  0.0440084077 ]
+      - [ 0.00175978895,-0.999819338,    0.018925827,  -0.0283811111 ]
+      - [ 0.0,           0.0,            0.0,           1.0 ]
+      
+  pitch_compensation: 0.0 
+  yaw_compensation: 0.0
   z_compensation: 0.0
 
 # ==========================================
@@ -36,21 +38,21 @@ camera:
 detection_model:
   backend: "cpu_onnx" # Options: "cpu_onnx" or "tensorrt"
   model_path_onnx: "./src/vision/model/sim_data_det_0126.onnx" 
-  model_path_tensorrt: "./src/vision/model/best_digua_10.3.engine"
-  confidence_threshold: 0.85
+  model_path_tensorrt: "./src/vision/model/best_digua_second_10.3.engine"
+  confidence_threshold: 0.5
   nms_threshold: 0.4
   classnames: [Ball, Goalpost, Person, LCross, TCross, XCross, PenaltyPoint, Opponent, BRMarker]
   post_process:
     single_ball_assumption: false
     confidence_thresholds: 
-      Ball: 0.4
-      Goalpost: 0.4
-      Person: 0.4
-      LCross: 0.3
-      TCross: 0.3
-      XCross: 0.3
-      PenaltyPoint: 0.3
-      Opponent: 0.4
+      Ball: 0.2
+      Goalpost: 0.2
+      Person: 0.2
+      LCross: 0.1
+      TCross: 0.1
+      XCross: 0.1
+      PenaltyPoint: 0.1
+      Opponent: 0.5
       BRMarker: 0.2
 
 segmentation_model: 
@@ -64,7 +66,7 @@ segmentation_model:
 # --- POSE ESTIMATION (SIM2REAL LOGIC) ---
 # ==========================================
 ball_pose_estimator:
-  use_depth: true 
+  use_depth: false 
   radius: 0.109
   down_sample_leaf_size: 0.01
   cluster_distance_threshold: 0.01
