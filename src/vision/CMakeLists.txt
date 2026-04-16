@@ -13,12 +13,14 @@ set(CMAKE_CXX_STANDARD 17)
 # ==========================================
 # 1. HARDWARE / PROTOTYPING OPTIONS
 # ==========================================
-# Defaulting to ON for PC prototyping using ONNX instead of Jetson TensorRT
+# [K1DIY] Dual-path build system. 
+# Use -DNO_CUDA=OFF to target the Booster K1 Jetson (TensorRT).
+# Use -DNO_CUDA=ON (Default) for PC prototyping (ONNX).
 option(NO_CUDA "Build without CUDA/TensorRT, use ONNX instead" ON)
 
 if(NO_CUDA)
   add_definitions(-DNO_CUDA)
-  message(STATUS "Building without CUDA - using ONNX for inference")
+  message(STATUS "[K1DIY] Mode: Prototyping (Non-GPU PC). Using ONNX Runtime.")
   
   find_path(ONNXRUNTIME_INCLUDE_DIRS onnxruntime_cxx_api.h
     HINTS /usr/include/onnxruntime /usr/local/include/onnxruntime /opt/onnxruntime/include
@@ -32,8 +34,34 @@ if(NO_CUDA)
     message(STATUS "Found ONNX Runtime: ${ONNXRUNTIME_LIBRARIES}")
     include_directories(${ONNXRUNTIME_INCLUDE_DIRS})
   else()
-    message(WARNING "ONNX Runtime not found! You may need to run the install script.")
+    message(WARNING "ONNX Runtime not found! Ensure it is installed for PC prototyping.")
   endif()
+
+else()
+  message(STATUS "[K1DIY] Mode: Deployment (Booster K1 Jetson). Using CUDA/TensorRT.")
+  set(USE_TENSORRT ON CACHE INTERNAL "Force using TensorRT for all sub-projects")
+
+  find_package(CUDA REQUIRED)
+
+  # Find TensorRT
+  find_path(TENSORRT_INCLUDE_DIR NvInfer.h
+    HINTS
+      /usr/include/aarch64-linux-gnu
+      /usr/local/cuda/include
+      $ENV{TENSORRT_DIR}/include
+  )
+  find_library(TENSORRT_LIBRARY nvinfer
+    HINTS
+      /usr/lib/aarch64-linux-gnu
+      /usr/local/cuda/lib64
+      $ENV{TENSORRT_DIR}/lib
+  )
+
+  if(NOT TENSORRT_INCLUDE_DIR OR NOT TENSORRT_LIBRARY)
+    message(FATAL_ERROR "TensorRT not found. Required for Jetson deployment.")
+  endif()
+  
+  include_directories(${TENSORRT_INCLUDE_DIR} ${CUDA_INCLUDE_DIRS})
 endif()
 
 # ==========================================
@@ -54,7 +82,7 @@ find_package(OpenCV REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(pcl_conversions REQUIRED)
 
-# [K1DIY] We UNCOMMENTED this because ProcessData now uses Detections.msg!
+# [K1DIY] Vision interface is required for Detections.msg processing!
 find_package(vision_interface REQUIRED)
 
 # ==========================================
