@@ -1,19 +1,19 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>brain</name>
-  <version>0.0.0</version>
-  <description>Brain node for K1DIY based on NaovaK1</description>
-  <maintainer email="le-khai.pham.1@ens.etsmtl.ca">Khai Pham</maintainer>
-  <license>MIT</license>
+  <name>game_controller</name>
+  <version>1.0.0</version>
+  <description>robocup game_controller</description>
+  <maintainer email="lishuai@booster.tech">Lishuai</maintainer>
+  <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
   <depend>rclcpp</depend>
-  <depend>vision_interface</depend>
   <depend>std_msgs</depend>
-  <depend>booster_msgs</depend>
-  <depend>booster_interface</depend>
   <depend>game_controller_interface</depend>
 
   <export>

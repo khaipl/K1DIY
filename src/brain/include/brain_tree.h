@@ -137,19 +137,21 @@ private:
 class CamFindBall : public SyncActionNode
 {
 public:
-    CamFindBall(const string &name, const NodeConfig &config, Brain *_brain);
+    CamFindBall(const string &name, const NodeConfig &config, Brain *_brain) : SyncActionNode(name, config), brain(_brain) {
+        // Initialize the scan timer when the node is created
+        _startScanTime = brain->get_clock()->now();
+    }
+
+    static PortsList providedPorts()
+    {
+        return {};
+    }
 
     NodeStatus tick() override;
 
 private:
-    double _cmdSequence[6][2];    
-    rclcpp::Time _timeLastCmd;   
-    int _cmdIndex;                
-    long _cmdIntervalMSec;        
-    long _cmdRestartIntervalMSec; 
-
     Brain *brain;
-
+    rclcpp::Time _startScanTime; 
 };
 
 
@@ -727,3 +729,5 @@ public:
 private:
     Brain *brain;
 };
+
+}

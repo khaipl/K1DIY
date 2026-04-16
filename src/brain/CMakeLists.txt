@@ -14,6 +14,7 @@ find_package(vision_interface REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(booster_msgs REQUIRED)
 find_package(booster_interface REQUIRED)
+find_package(game_controller_interface REQUIRED)
 
 # Add the executable
 add_executable(brain_node src/brain_node.cpp)
@@ -30,6 +31,7 @@ ament_target_dependencies(
   "std_msgs"
   "booster_msgs"
   "booster_interface"
+  "game_controller_interface"
 )
 
 # Install executable

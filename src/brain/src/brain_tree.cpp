@@ -6,7 +6,6 @@
 #include "utils/math.h"
 #include "utils/print.h"
 #include "utils/misc.h"
-#include "locator.h"
 #include "std_msgs/msg/string.hpp"
 #include "visualization_msgs/msg/marker_array.hpp"
 #include <fstream>
@@ -15,8 +14,8 @@
 /**
  * Here we use a macro definition to reduce the code for RegisterBuilder. The effect of REGISTER_BUILDER(Test) after expansion is
  * factory.registerBuilder<Test>(  \
- *      "Test",                    \
- *     [this](const string& name, const NodeConfig& config) { return make_unique<Test>(name, config, brain); });
+ * "Test",                    \
+ * [this](const string& name, const NodeConfig& config) { return make_unique<Test>(name, config, brain); });
  */
 #define REGISTER_BUILDER(Name)     \
     factory.registerBuilder<Name>( \
@@ -139,109 +138,85 @@ NodeStatus StepOnSpot::tick()
     return NodeStatus::SUCCESS;
 }
 
+// ============================================================================
+// Upgraded Head Tracking: Smooth Low-Pass Filter
+// ============================================================================
 NodeStatus CamTrackBall::tick()
 {
-    double pitch, yaw, ballX, ballY, deltaX, deltaY;
-    const double pixToleranceX = brain->config->cameraImageWidth * 3 / 10.; // If the pixel difference between the ball and the center of the field of view is less than this tolerance, it is considered to be at the center of the field of view.
-    const double pixToleranceY = brain->config->cameraImageHeight * 3 / 10.;
-    const double xCenter = brain->config->cameraImageWidth / 2;
-    const double yCenter = brain->config->cameraImageHeight / 2; 
-
+    double target_pitch, target_yaw;
+    double head_smoothing = 0.15; // 0.0 to 1.0. Lower = smoother.
 
     bool iSeeBall = brain->data->ballDetected;
     bool iKnowBallPos = brain->tree->getEntry<bool>("ball_location_known");
     bool tmBallPosReliable = brain->tree->getEntry<bool>("tm_ball_pos_reliable");
+    
     if (!(iKnowBallPos || tmBallPosReliable))
         return NodeStatus::SUCCESS;
 
-    if (!iSeeBall)
-    { 
+    if (!iSeeBall) { 
+        // Track last known position (either from memory or teammate)
         if (iKnowBallPos) {
-            // moving with smooth to last known ball position from vision
-            pitch = brain->data->headPitch + (brain->data->ball.pitchToRobot - brain->data->headPitch) * 0.01;
-            yaw = brain->data->headYaw + (brain->data->ball.yawToRobot - brain->data->headYaw) * 0.01;
+            target_pitch = brain->data->ball.pitchToRobot;
+            target_yaw = brain->data->ball.yawToRobot;
         } else if (tmBallPosReliable) {
-            pitch =  brain->data->headPitch + (brain->data->tmBall.pitchToRobot - brain->data->headPitch) * 0.01;
-            yaw = brain->data->headYaw + (brain->data->tmBall.yawToRobot - brain->data->headYaw) * 0.01;
-        } else {
-            brain->log->error("CamTrackBall", "reached impossible condition");
+            target_pitch = brain->data->tmBall.pitchToRobot;
+            target_yaw = brain->data->tmBall.yawToRobot;
         }
+    } else {      
+        // Track live ball
+        target_pitch = brain->data->ball.pitchToRobot;
+        target_yaw = brain->data->ball.yawToRobot;
     }
-    else {      
-        ballX = mean(brain->data->ball.boundingBox.xmax, brain->data->ball.boundingBox.xmin);
-        ballY = mean(brain->data->ball.boundingBox.ymax, brain->data->ball.boundingBox.ymin);
-        deltaX = ballX - xCenter;
-        deltaY = ballY - yCenter; 
-        
-        if (std::fabs(deltaX) < pixToleranceX && std::fabs(deltaY) < pixToleranceY)
-        {
-            return NodeStatus::SUCCESS;
-        }
 
-        double smoother = 3.5;
-        double deltaYaw = deltaX / brain->config->cameraImageWidth * brain->config->depthCameraFovX / smoother;
-        double deltaPitch = deltaY / brain->config->cameraImageHeight * brain->config->depthCameraFovY / smoother;
-
-        pitch = brain->data->headPitch + deltaPitch;
-        yaw = brain->data->headYaw - deltaYaw;
-    }
+    // The K1 Low-Pass Smoothing Filter
+    double pitch = brain->data->headPitch + head_smoothing * (target_pitch - brain->data->headPitch);
+    double yaw = brain->data->headYaw + head_smoothing * (target_yaw - brain->data->headYaw);
 
     brain->client->moveHead(pitch, yaw);
     return NodeStatus::SUCCESS;
 }
 
-CamFindBall::CamFindBall(const string &name, const NodeConfig &config, Brain *_brain) : SyncActionNode(name, config), brain(_brain)
-{
-    double lowPitch = 1.0;
-    double highPitch = 0.2;
-    double leftYaw = 1.1;
-    double rightYaw = -1.1;
-
-    _cmdSequence[0][0] = lowPitch;
-    _cmdSequence[0][1] = leftYaw;
-    _cmdSequence[1][0] = lowPitch;
-    _cmdSequence[1][1] = 0;
-    _cmdSequence[2][0] = lowPitch;
-    _cmdSequence[2][1] = rightYaw;
-    _cmdSequence[3][0] = highPitch;
-    _cmdSequence[3][1] = rightYaw;
-    _cmdSequence[4][0] = highPitch;
-    _cmdSequence[4][1] = 0;
-    _cmdSequence[5][0] = highPitch;
-    _cmdSequence[5][1] = leftYaw;
-
-    _cmdIndex = 0;
-    _cmdIntervalMSec = 1000;
-    _cmdRestartIntervalMSec = 60000;
-    _timeLastCmd = brain->get_clock()->now();
-}
-
+// ============================================================================
+// Upgraded Ball Search: Continuous Sine Wave Sweep
+// ============================================================================
 NodeStatus CamFindBall::tick()
 {
-    if (brain->data->ballDetected)
-    {
+    if (brain->data->ballDetected) {
+        // Reset scan timer for the next time we lose the ball
+        _startScanTime = brain->get_clock()->now(); 
         return NodeStatus::SUCCESS;
-    } // Currently, all nodes return Success. Returning Failure would affect the execution of subsequent nodes.
+    } 
 
-    auto curTime = brain->get_clock()->now();
-    auto timeSinceLastCmd = (curTime - _timeLastCmd).nanoseconds() / 1e6;
-    if (timeSinceLastCmd < _cmdIntervalMSec)
-    {
-        return NodeStatus::SUCCESS;
-    } // Not yet time for the next command
-    else if (timeSinceLastCmd > _cmdRestartIntervalMSec)
-    {                  // Exceeded a certain time, consider this as restarting from the beginning
-        _cmdIndex = 0; // Note that we don't return here
-    }
-    else
-    { // Reached the time, execute the next command, also do not return
-        _cmdIndex = (_cmdIndex + 1) % (sizeof(_cmdSequence) / sizeof(_cmdSequence[0]));
+    auto now = brain->get_clock()->now();
+    double elapsed_scanning = (now - _startScanTime).seconds();
+    
+    double target_pitch = 0.35; 
+    double target_yaw = 0.0;
+
+    if (elapsed_scanning < 3.0) {
+        // --- PHASE A: Graceful Pitch Down ---
+        // Interpolate pitch from looking up (0.15) to scanning (0.35)
+        double progress = elapsed_scanning / 3.0; 
+        target_pitch = 0.15 + (0.20 * progress);
+        target_yaw = 0.0; // Look straight while dropping the head
+    } else {
+        // --- PHASE B: Continuous Sine Wave Scanning ---
+        target_pitch = 0.35; 
+        double time_sec = now.nanoseconds() * 1e-9;
+        
+        // 0.8 controls sweep width, 1.5 controls sweep speed
+        target_yaw = 0.8 * std::sin(time_sec * 1.5); 
     }
 
-    brain->client->moveHead(_cmdSequence[_cmdIndex][0], _cmdSequence[_cmdIndex][1]);
-    _timeLastCmd = brain->get_clock()->now();
+    // Apply the same smoothing filter to prevent hardware jerking
+    double head_smoothing = 0.15; 
+    double pitch = brain->data->headPitch + head_smoothing * (target_pitch - brain->data->headPitch);
+    double yaw = brain->data->headYaw + head_smoothing * (target_yaw - brain->data->headYaw);
+
+    brain->client->moveHead(pitch, yaw);
     return NodeStatus::SUCCESS;
 }
+
 
 NodeStatus CamScanField::tick()
 {
