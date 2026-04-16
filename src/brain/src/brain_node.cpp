@@ -202,7 +202,7 @@ private:
                 break;
 
             case BrainState::WALKING: {
-                float target_pitch = 0.65f; // Default scanning pitch
+                float target_pitch = 0.45f; // Default scanning pitch
                 float target_yaw = 0.0f;
 
                 // Track exactly how long we have been in the WALKING state
