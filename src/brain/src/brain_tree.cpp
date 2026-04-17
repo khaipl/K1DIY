@@ -138,6 +138,13 @@ NodeStatus StepOnSpot::tick()
     return NodeStatus::SUCCESS;
 }
 
+CamFindBall::CamFindBall(const string &name, const NodeConfig &config, Brain *_brain) 
+    : SyncActionNode(name, config), brain(_brain) 
+{
+    // Initialize the scan timer when the node is created
+    _startScanTime = brain->get_clock()->now();
+}
+
 // ============================================================================
 // Upgraded Head Tracking: Smooth Low-Pass Filter
 // ============================================================================

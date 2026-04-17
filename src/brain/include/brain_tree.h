@@ -137,10 +137,8 @@ private:
 class CamFindBall : public SyncActionNode
 {
 public:
-    CamFindBall(const string &name, const NodeConfig &config, Brain *_brain) : SyncActionNode(name, config), brain(_brain) {
-        // Initialize the scan timer when the node is created
-        _startScanTime = brain->get_clock()->now();
-    }
+    // Notice we removed the {} block and just ended with a semicolon
+    CamFindBall(const string &name, const NodeConfig &config, Brain *_brain);
 
     static PortsList providedPorts()
     {
@@ -729,5 +727,3 @@ public:
 private:
     Brain *brain;
 };
-
-}

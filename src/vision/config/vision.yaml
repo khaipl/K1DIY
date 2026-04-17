@@ -15,8 +15,8 @@ camera:
   # camera_topic: "/camera/robot0_rgbd_camera/rgb/image_compressed" # sim
   # depth_topic: "/camera/robot0_rgbd_camera/depth/image_raw" # sim
   intrin: 
-    fx: 206.445511`
-    fy: 206.445511`
+    fx: 206.445511
+    fy: 206.445511
     cx: 224.958221
     cy: 242.717239
     distortion_model: 0
