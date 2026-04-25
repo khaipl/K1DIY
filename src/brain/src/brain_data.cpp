@@ -30,7 +30,7 @@ vector<FieldMarker> BrainData::getMarkersForLocator()
         auto y = markings[i].posToRobot.y;
         auto confidence = markings[i].confidence;
 
-        char markerType;
+        char markerType = 'U'; // 'U' for Unknown (prevents uninitialized warning)
         if (label == "LCross")
             markerType = 'L';
         else if (label == "TCross")
@@ -39,6 +39,8 @@ vector<FieldMarker> BrainData::getMarkersForLocator()
             markerType = 'X';
         else if (label == "PenaltyPoint")
             markerType = 'P';
+        else
+            continue; // Safely skip if the marker type is not recognized
 
         res.push_back(FieldMarker{markerType, x, y, confidence});
     }

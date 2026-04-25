@@ -1,12 +1,12 @@
 brain_node:
   ros__parameters:
     game:
-      team_id: 14 # must be consistent with GameControl
+      team_id: 45 # must be consistent with GameControl
       player_id: 1 # 1 | 2 | 3 | 4 | 5
       field_type: "adult_size" # adult_size | kid_size | robo_league TODO: Verify use of field_type
       player_role: "striker" # striker | goal_keeper
       treat_person_as_robot: false
-      number_of_players: 3
+      number_of_players: 1
       
     robot:
       robot_name: "" # When multiple robots exist, specify e.g. "robot0", "robot1"; leave empty for single robot

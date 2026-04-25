@@ -3,6 +3,7 @@
 #include <memory>
 #include <map>
 #include <string>
+#include <vector>
 
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/image.hpp>
@@ -11,21 +12,21 @@
 #include <image_transport/image_transport.hpp>
 #include <geometry_msgs/msg/transform_stamped.hpp>
 #include <geometry_msgs/msg/pose.hpp>
-#include "vision_interface/msg/detections.hpp"
 
+// [LIB] Custom ROS 2 Messages
+#include "vision_interface/msg/detections.hpp"
 #include "vision_interface/msg/line_segments.hpp"
 #include "vision_interface/msg/cal_param.hpp"
 #include "vision_interface/msg/ball.hpp"
 
 #include <yaml-cpp/yaml.h>
 
-// [K1DIY] Need OpenCV for the VideoWriter and Debugging
+// [K1DIY] OpenCV for VideoWriter and Debugging
 #include <opencv2/opencv.hpp>
 #include <opencv2/videoio.hpp>
 
 #include "booster_vision/base/intrin.h"
 #include "booster_vision/base/pose.h"
-
 #include "booster_vision/color_classifier.hpp"
 
 namespace booster_vision {
@@ -57,7 +58,26 @@ public:
     void ProcessSegmentationData(SyncedDataBlock &synced_data, vision_interface::msg::LineSegments &field_line_segs_msg);
 
 private:
+    // ==========================================================
+    // --- [K1DIY FEATURE] Debug Video Recorder ---
+    // ==========================================================
     void RecordDebugVideo(cv::VideoWriter& writer, const cv::Mat& frame, const std::string& filename, const std::string& log_name, double fps);
+    
+    std::string camera_type_;      // Used to flag "laptop" mode
+    std::string robot_name_;       // Simulation topic suffixing
+    cv::VideoWriter raw_writer_;
+    cv::VideoWriter depth_writer_;
+    rclcpp::Time start_record_time_;
+    bool is_recording_ = false;
+
+    // ==========================================================
+    // --- NaovaK1 Production Variables ---
+    // ==========================================================
+    bool use_depth_ = false;
+    bool show_det_ = false;
+    bool show_seg_ = false;
+    bool save_data_ = false;
+    bool save_depth_ = false;
     bool offline_mode_ = false;
     std::string detection_model_path;
     std::string segmentation_model_path;
@@ -77,28 +97,24 @@ private:
     float z_compensation_ = 0;
     int line_segment_area_threshold_ = 10; // threshold for line segment detection
 
-    // post processing
+    // Post processing
     bool enable_post_process_ = false;
     bool single_ball_assumption_ = false;
     std::vector<std::string> classnames_;
-    // std::vector<float> duration_list_;
-    // std::vector<std::string> duration_name_list_;
     std::map<std::string, float> confidence_map_;
-    // std::string profiler_log_path_;
-    // bool first_write_profiler_log_ = true;
-
 
     std::shared_ptr<rclcpp::Node> nh_;
+    
+    // Publishers
     rclcpp::Publisher<vision_interface::msg::Detections>::SharedPtr detection_pub_;
     rclcpp::Publisher<vision_interface::msg::LineSegments>::SharedPtr field_line_pub_;
     rclcpp::Publisher<vision_interface::msg::Ball>::SharedPtr ball_pub_;
-
     rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr detection_img_pub_;
     rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr segmentation_img_pub_;
-
     rclcpp::Publisher<geometry_msgs::msg::TransformStamped>::SharedPtr pose_tf_pub_;
-    rclcpp::Subscription<geometry_msgs::msg::TransformStamped>::SharedPtr pose_tf_sub_;
 
+    // Subscribers & Transports
+    rclcpp::Subscription<geometry_msgs::msg::TransformStamped>::SharedPtr pose_tf_sub_;
     std::shared_ptr<image_transport::ImageTransport> it_;
     image_transport::Subscriber color_sub_;
     image_transport::Subscriber depth_sub_;
@@ -110,13 +126,14 @@ private:
     rclcpp::Subscription<vision_interface::msg::CalParam>::SharedPtr calParam_sub_; // Sub for calibration params
     rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr camera_info_sub_;
 
+    // Threading Callback Groups
     rclcpp::CallbackGroup::SharedPtr callback_group_sub_1_;
     rclcpp::CallbackGroup::SharedPtr callback_group_sub_2_;
     rclcpp::CallbackGroup::SharedPtr callback_group_sub_3_;
     rclcpp::CallbackGroup::SharedPtr callback_group_sub_4_;
 
+    // Core Modules
     std::shared_ptr<ColorClassifier> color_classifier_;
-
     std::shared_ptr<DataLogger> data_logger_;
     std::shared_ptr<DataSyncer> data_syncer_;
     std::shared_ptr<DataSyncer> seg_data_syncer_;
@@ -126,18 +143,6 @@ private:
     std::map<std::string, std::shared_ptr<PoseEstimator>> pose_estimator_map_;
     
     YAML::Node config_node_;  // Store config for recreating pose estimators
-
-    // ==========================================================
-    // --- [K1DIY FEATURES] Variables for Debugging & Recording ---
-    // ==========================================================
-    std::string camera_type_;
-    cv::VideoWriter raw_writer_;
-    cv::VideoWriter depth_writer_;
-    rclcpp::Time start_record_time_;
-
-    bool is_recording_ = false;
-    bool show_det_ = false; // Set to 'true' to enable the OpenCV detection visualizer window
-    bool show_seg_ = false; // Set to 'true' to enable the OpenCV segmentation visualizer window
 };
 
 } // namespace booster_vision

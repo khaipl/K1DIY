@@ -10,14 +10,14 @@ class DepthMockNode(Node):
         # Listen to your live laptop camera
         self.subscription = self.create_subscription(
             Image,
-            '/booster_camera_bridge/image_left_raw',
+            '/StereoNetNode/rectified_image',
             self.image_callback,
             10)
         
         # Publish to the K1's expected depth topic
         self.publisher_ = self.create_publisher(
             Image,
-            '/booster_camera_bridge/StereoNetNode/stereonet_depth',
+            '/StereoNetNode/stereonet_depth',
             10)
         
         self.bridge = CvBridge()

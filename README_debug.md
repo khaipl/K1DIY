@@ -14,7 +14,7 @@ Capture your laptop's built-in webcam and publish it to the expected hardware to
 
 ```bash
 source /opt/ros/humble/setup.bash
-ros2 run v4l2_camera v4l2_camera_node --ros-args -p video_device:="/dev/video0" -r /image_raw:=/booster_camera_bridge/image_left_raw
+ros2 run v4l2_camera v4l2_camera_node --ros-args -p video_device:="/dev/video0" -r /image_raw:=/StereoNetNode/rectified_image
 ```
 
 ### Terminal 2: Run the Depth Mock Node
@@ -60,3 +60,20 @@ Before running, ensure your src/vision/config/vision.yaml is set up for local la
 * `enable\ai: false` (or `true` if you want to test the ONNX model).  
 * `backend: "cpu\onnx"`
 * `use\depth: false` (unless you are mocking the depth topic locally, as standard webcams do not provide stereo depth).
+
+
+## What has changed:
+* **Timestamping**: It now creates a `log/` directory.
+* **Unique Folders**: Inside `log/`, it creates a folder named with the current date and time (e.g., `20260423_133005`) for every run.
+* **Symlink (`latest`)**: The script creates a symbolic link named `latest` that always points to the most recent log folder. This means you can always run `tail -f log/latest/brain.log` without needing to know the exact timestamp of the current session.
+* **Redirection**: All `nohup` outputs are directed into these specific files within the timestamped folder.
+
+
+
+### How to use it:
+1.  Run the script: `./scripts/start.sh`.
+2.  To see what the Behavior Tree is doing right now:
+
+```bash
+tail -f log/latest/brain.log
+```

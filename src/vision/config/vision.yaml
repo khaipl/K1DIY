@@ -3,15 +3,16 @@
 # ==========================================
 is_recording: false # Set to 'true' to enable recording of camera data and model outputs for offline analysis
 show_det: true # Set to 'true' while debugging
-show_seg: false # Set to 'true' while debugging
+show_seg: true # Set to 'true' while debugging
 
 # ==========================================
 # --- CORE HARDWARE & CAMERA CONFIG ---
 # ==========================================
 camera:
   type: "laptop" # Options: "d-robotics" for real or "laptop" for testing
-  camera_topic: "/booster_camera_bridge/image_left_raw" 
-  depth_topic:  "/booster_camera_bridge/StereoNetNode/stereonet_depth" 
+  camera_topic: "/StereoNetNode/rectified_image" 
+  depth_topic:  "/StereoNetNode/stereonet_depth" 
+  intrin_topic: "/StereoNetNode/stereonet_depth/camera_info"
   # camera_topic: "/camera/robot0_rgbd_camera/rgb/image_compressed" # sim
   # depth_topic: "/camera/robot0_rgbd_camera/depth/image_raw" # sim
   intrin: 
@@ -37,11 +38,11 @@ camera:
 # ==========================================
 detection_model:
   backend: "cpu_onnx" # Options: "cpu_onnx" or "tensorrt"
-  model_path_onnx: "./src/vision/model/sim_data_det_0126.onnx" 
-  model_path_tensorrt: "./src/vision/model/best_digua_second_10.3.engine"
+  model_path_onnx: "/home/lekhai2202/K1DIY/src/vision/model/sim_data_det_0126.onnx" 
+  model_path_tensorrt: "/home/lekhai2202/K1DIY/src/vision/model/best_digua_second_10.3.engine"
   confidence_threshold: 0.5
   nms_threshold: 0.4
-  classnames: [Ball, Goalpost, Person, LCross, TCross, XCross, PenaltyPoint, Opponent, BRMarker]
+  classnames: ["Ball", "Goalpost", "Person", "LCross", "TCross", "XCross", "PenaltyPoint", "Opponent", "BRMarker"]
   post_process:
     single_ball_assumption: false
     confidence_thresholds: 
@@ -57,8 +58,8 @@ detection_model:
 
 segmentation_model: 
   backend: "cpu_onnx" # Options: "cpu_onnx" or "tensorrt"
-  model_path_onnx: "./src/vision/model/sim_data_seg_0126.onnx" 
-  model_path_tensorrt: "./src/vision/model/best_seg_orin_10.3.engine"
+  model_path_onnx: "/home/lekhai2202/K1DIY/src/vision/model/sim_data_seg_0126.onnx" 
+  model_path_tensorrt: "/home/lekhai2202/K1DIY/src/vision/model/best_seg_orin_10.3.engine"
   confidence_threshold: 0.3
   nms_threshold: 0.9
 
